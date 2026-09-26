@@ -26,10 +26,25 @@ public class Robot extends TimedRobot {
     }
 
     @Override
-    public void robotPeriodic() {
-        m_timeAndJoystickReplay.update();
-        CommandScheduler.getInstance().run(); 
-    }
+public void robotPeriodic() {
+    m_timeAndJoystickReplay.update();
+    CommandScheduler.getInstance().run();
+
+    // Display Limelight readings only—no vision-controlled movement.
+    boolean tagVisible = LimelightHelpers.getTV("limelight");
+
+    SmartDashboard.putBoolean("Limelight/Target Visible", tagVisible);
+
+    SmartDashboard.putNumber(
+        "Limelight/Tag ID",
+        tagVisible ? LimelightHelpers.getFiducialID("limelight") : -1
+    );
+
+    SmartDashboard.putNumber(
+        "Limelight/Horizontal Angle Degrees",
+        tagVisible ? LimelightHelpers.getTX("limelight") : Double.NaN
+    );
+}
 
     @Override
     public void disabledInit() {}
