@@ -74,5 +74,78 @@ public final class Constants {
        
         
     }
+
+    /** Vision pose fusion (Limelight MegaTag2). Everything here is PLACEHOLDER - TUNE ON ROBOT. */
+    public static final class VisionConstants {
+        /**
+         * Master switch for feeding Limelight poses into the drivetrain pose estimator.
+         * Default false so existing odometry/auto behavior is unchanged. Set true only after
+         * verifying camera names, camera pose in the Limelight UI, and field map.
+         */
+        public static final boolean FUSION_ENABLED = false;
+
+        public static final String CAMERA_1 = "limelight";
+        /** Optional second camera. Leave "" to disable. */
+        public static final String CAMERA_2 = "";
+
+        /** PLACEHOLDER - TUNE ON ROBOT: reject frames while spinning faster than this (deg/s). */
+        public static final double MAX_YAW_RATE_DEG_PER_SEC = 720.0;
+        /** PLACEHOLDER - TUNE ON ROBOT: reject frames whose timestamp is older than this (s). */
+        public static final double MAX_FRAME_AGE_SEC = 0.5;
+        /** PLACEHOLDER - TUNE ON ROBOT: base xy std dev (m) at zero distance. */
+        public static final double BASE_XY_STD_DEV_M = 0.5;
+        /** PLACEHOLDER - TUNE ON ROBOT: distance (m^2) scale; std = base * (1 + d^2 / k). */
+        public static final double DISTANCE_SCALE_K = 4.0;
+        /** MegaTag2 heading is not trusted; the gyro is. Huge std dev ignores vision rotation. */
+        public static final double THETA_STD_DEV_RAD = 9999999.0;
+    }
+
+    /** Hold-to-align-to-peg feature. */
+    public static final class AlignConstants {
+        /**
+         * MASTER ENABLE. When false the align button does nothing (not bound).
+         * WARNING: PEG_TAG_IDS and FIELD_LAYOUT below are UNKNOWN placeholders and MUST be
+         * verified against the game manual / field before setting this true.
+         */
+        public static final boolean ALIGN_ENABLED = false;
+
+        /** Field layout choice. PLACEHOLDER - verify which field (welded/andymark) is used. */
+        public static final edu.wpi.first.apriltag.AprilTagFields FIELD_LAYOUT =
+            edu.wpi.first.apriltag.AprilTagFields.k2026RebuiltWelded;
+
+        /** PLACEHOLDER - VERIFY: tag IDs next to scoring pegs. Empty = nothing to align to. */
+        public static final int[] PEG_TAG_IDS = {};
+
+        /** PLACEHOLDER - TUNE ON ROBOT: robot-center distance in front of the tag face (m). */
+        public static final double OFFSET_DISTANCE_M = 0.6;
+        /** PLACEHOLDER - TUNE ON ROBOT: lateral offset, +left when looking at the tag from the front (m). */
+        public static final double OFFSET_LATERAL_M = 0.0;
+
+        // PLACEHOLDER - TUNE ON ROBOT: gains, caps, tolerances
+        public static final double XY_KP = 2.0, XY_KI = 0.0, XY_KD = 0.0;
+        public static final double THETA_KP = 3.0, THETA_KI = 0.0, THETA_KD = 0.0;
+        public static final double MAX_SPEED_MPS = 1.0;
+        public static final double MAX_ACCEL_MPS2 = 1.5;
+        public static final double MAX_ANGULAR_RAD_PER_SEC = Math.PI;
+        public static final double MAX_ANGULAR_ACCEL_RAD_PER_SEC2 = 2 * Math.PI;
+        public static final double XY_TOLERANCE_M = 0.03;
+        public static final double THETA_TOLERANCE_RAD = Math.toRadians(2.0);
+        /** Consecutive in-tolerance loops (with fresh vision) before isAligned() is true. */
+        public static final int ALIGNED_LOOPS = 10;
+        /** Command ends NOT aligned after this long. */
+        public static final double TIMEOUT_SEC = 5.0;
+        /** Command ends NOT aligned if no accepted vision frame for this long. */
+        public static final double LOST_TARGET_SEC = 0.5;
+
+        /** Driver controller bindings (CommandXboxController). */
+        // Align: hold right trigger. Score: left trigger.
+
+        /**
+         * Score binding is disabled: there is NO beam break sensor in this codebase.
+         * TODO: add a beam break (DigitalInput) subsystem, wire it into
+         * RobotContainer.pieceHeld, then set this true.
+         */
+        public static final boolean SCORE_BINDING_ENABLED = false;
+    }
 }
 

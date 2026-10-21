@@ -1,0 +1,37 @@
+package frc.robot.vision;
+
+import frc.robot.Constants.VisionConstants;
+
+/** Pure (HAL-free) accept/reject and std-dev logic for vision frames. */
+public final class VisionFilter {
+    private VisionFilter() {}
+
+    public enum Result { ACCEPT, NO_TAGS, SPINNING, STALE, DUPLICATE, INVALID }
+
+    public static Result evaluate(int tagCount, double yawRateDegPerSec, double frameTimestampSec,
+            double nowSec, double lastAcceptedTimestampSec, double maxYawRateDegPerSec, double maxAgeSec) {
+        if (Double.isNaN(frameTimestampSec) || Double.isNaN(yawRateDegPerSec)) return Result.INVALID;
+        if (tagCount <= 0) return Result.NO_TAGS;
+        if (Math.abs(yawRateDegPerSec) > maxYawRateDegPerSec) return Result.SPINNING;
+        if (nowSec - frameTimestampSec > maxAgeSec) return Result.STALE;
+        if (frameTimestampSec == lastAcceptedTimestampSec) return Result.DUPLICATE;
+        return Result.ACCEPT;
+    }
+
+    public static Result evaluate(int tagCount, double yawRateDegPerSec, double frameTimestampSec,
+            double nowSec, double lastAcceptedTimestampSec) {
+        return evaluate(tagCount, yawRateDegPerSec, frameTimestampSec, nowSec, lastAcceptedTimestampSec,
+            VisionConstants.MAX_YAW_RATE_DEG_PER_SEC, VisionConstants.MAX_FRAME_AGE_SEC);
+    }
+
+    /** xy std dev (m) = base * (1 + d^2 / k). */
+    public static double xyStdDev(double avgTagDistM, double base, double k) {
+        return base * (1.0 + avgTagDistM * avgTagDistM / k);
+    }
+
+    /** @return {x, y, theta} std devs. */
+    public static double[] stdDevs(double avgTagDistM) {
+        double xy = xyStdDev(avgTagDistM, VisionConstants.BASE_XY_STD_DEV_M, VisionConstants.DISTANCE_SCALE_K);
+        return new double[] {xy, xy, VisionConstants.THETA_STD_DEV_RAD};
+    }
+}

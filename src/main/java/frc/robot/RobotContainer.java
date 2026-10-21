@@ -40,6 +40,11 @@ import frc.robot.subsystems.IntakeSubsystem;
 import frc.robot.subsystems.ShooterSubsystem;
 import frc.robot.commands.IntakeUpCommand;
 import frc.robot.commands.Intake;
+import frc.robot.commands.AlignToPegCommand;
+import frc.robot.vision.VisionSubsystem;
+import frc.robot.Constants.AlignConstants;
+import edu.wpi.first.wpilibj.Timer;
+import java.util.function.BooleanSupplier;
 
 public class RobotContainer {
     private double MaxSpeed = 1.0 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
@@ -57,6 +62,7 @@ public class RobotContainer {
     public final IndexerSubsystem m_IndexerSubsystem = new IndexerSubsystem();
     public final ShooterSubsystem m_ShooterSubsystem = new ShooterSubsystem();
     public final IntakeSubsystem m_IntakeSubsystem = new IntakeSubsystem();
+    public final VisionSubsystem m_VisionSubsystem = new VisionSubsystem(drivetrain);
 
     
 	private SendableChooser<Command> m_chooser = new SendableChooser<>();
@@ -186,6 +192,23 @@ public class RobotContainer {
 
         // Reset the field-centric heading on left bumper press.
         joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
+
+        // Hold-to-align to nearest peg tag: right trigger. Not bound unless ALIGN_ENABLED.
+        if (AlignConstants.ALIGN_ENABLED) {
+            final AlignToPegCommand align =
+                new AlignToPegCommand(drivetrain, m_VisionSubsystem::getLastAcceptedTimestamp);
+            joystick.rightTrigger(0.5).whileTrue(align);
+
+            // Score: left trigger. Only fires if aligned RIGHT NOW and a piece is held.
+            // TODO: no beam break sensor exists in this codebase; pieceHeld is hardwired false
+            // and SCORE_BINDING_ENABLED is false. Replace with a real sensor before enabling.
+            final BooleanSupplier pieceHeld = () -> false;
+            if (AlignConstants.SCORE_BINDING_ENABLED) {
+                joystick.leftTrigger(0.5).onTrue(Commands.either(
+                    shootCommandGroup(), Commands.none(),
+                    () -> align.isAligned() && pieceHeld.getAsBoolean()));
+            }
+        }
 
     }
 
