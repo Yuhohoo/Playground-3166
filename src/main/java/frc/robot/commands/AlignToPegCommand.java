@@ -3,11 +3,10 @@ package frc.robot.commands;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.OptionalInt;
-import java.util.function.DoubleSupplier;
+import java.util.function.IntToDoubleFunction;
 
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
-import edu.wpi.first.apriltag.AprilTagFieldLayout;
 import edu.wpi.first.math.controller.ProfiledPIDController;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
@@ -17,12 +16,15 @@ import edu.wpi.first.wpilibj2.command.Command;
 import frc.robot.Constants.AlignConstants;
 import frc.robot.align.AlignMath;
 import frc.robot.align.AlignStateMachine;
+import frc.robot.align.FieldLayoutLoader;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 
 /** Hold-to-align to the nearest peg tag. Ends NOT aligned on timeout or lost vision. */
 public class AlignToPegCommand extends Command {
     private final CommandSwerveDrivetrain drivetrain;
-    private final DoubleSupplier lastVisionTimestamp;
+    /** Newest fresh frame time for a given tag ID (-inf if none). */
+    private final IntToDoubleFunction lastVisionTimestamp;
+    private int targetId = -1;
     private final Map<Integer, Pose2d> tagPoses = new HashMap<>();
 
     private final ProfiledPIDController xPID = new ProfiledPIDController(
@@ -45,7 +47,7 @@ public class AlignToPegCommand extends Command {
 
     private Pose2d target;
 
-    public AlignToPegCommand(CommandSwerveDrivetrain drivetrain, DoubleSupplier lastVisionTimestamp) {
+    public AlignToPegCommand(CommandSwerveDrivetrain drivetrain, IntToDoubleFunction lastVisionTimestamp) {
         this.drivetrain = drivetrain;
         this.lastVisionTimestamp = lastVisionTimestamp;
         thetaPID.enableContinuousInput(-Math.PI, Math.PI);
@@ -53,14 +55,11 @@ public class AlignToPegCommand extends Command {
         yPID.setTolerance(AlignConstants.XY_TOLERANCE_M);
         thetaPID.setTolerance(AlignConstants.THETA_TOLERANCE_RAD);
         if (AlignConstants.ALIGN_ENABLED) {
-            try {
-                AprilTagFieldLayout layout = AprilTagFieldLayout.loadField(AlignConstants.FIELD_LAYOUT);
+            FieldLayoutLoader.getDeployLayout().ifPresent(layout -> {
                 for (int id : AlignConstants.PEG_TAG_IDS) {
                     layout.getTagPose(id).ifPresent(p -> tagPoses.put(id, p.toPose2d()));
                 }
-            } catch (RuntimeException e) {
-                System.err.println("AlignToPeg: failed to load field layout: " + e);
-            }
+            });
         }
         addRequirements(drivetrain);
     }
@@ -72,11 +71,13 @@ public class AlignToPegCommand extends Command {
     @Override
     public void initialize() {
         target = null;
+        targetId = -1;
         machine.start(Timer.getFPGATimestamp());
-        if (!AlignConstants.ALIGN_ENABLED) return;
+        if (!AlignConstants.ALIGN_ENABLED || !FieldLayoutLoader.isAvailable()) return;
         Pose2d pose = drivetrain.getState().Pose;
         OptionalInt id = AlignMath.nearestTag(pose, AlignConstants.PEG_TAG_IDS, tagPoses);
         if (id.isEmpty()) return;
+        targetId = id.getAsInt();
         target = AlignMath.targetPose(tagPoses.get(id.getAsInt()),
             AlignConstants.OFFSET_DISTANCE_M, AlignConstants.OFFSET_LATERAL_M);
         var speeds = drivetrain.getState().Speeds;
@@ -96,7 +97,7 @@ public class AlignToPegCommand extends Command {
         double now = Timer.getFPGATimestamp();
         boolean at = AlignMath.atTarget(pose, target,
             AlignConstants.XY_TOLERANCE_M, AlignConstants.THETA_TOLERANCE_RAD);
-        var status = machine.update(now, at, lastVisionTimestamp.getAsDouble());
+        var status = machine.update(now, at, lastVisionTimestamp.applyAsDouble(targetId));
         SmartDashboard.putString("Align/Status", status.name());
         SmartDashboard.putBoolean("Align/Aligned", machine.isAligned(now));
         if (status != AlignStateMachine.Status.RUNNING) return;

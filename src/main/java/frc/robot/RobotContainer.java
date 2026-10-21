@@ -41,6 +41,8 @@ import frc.robot.subsystems.ShooterSubsystem;
 import frc.robot.commands.IntakeUpCommand;
 import frc.robot.commands.Intake;
 import frc.robot.commands.AlignToPegCommand;
+import frc.robot.commands.AlignGating;
+import frc.robot.align.FieldLayoutLoader;
 import frc.robot.vision.VisionSubsystem;
 import frc.robot.Constants.AlignConstants;
 import edu.wpi.first.wpilibj.Timer;
@@ -191,12 +193,14 @@ public class RobotContainer {
         joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
 
         // Reset the field-centric heading on left bumper press.
-        joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
+        // Blocked while alignment is running (bound after the align block below).
+        AlignToPegCommand alignCmd = null;
 
         // Hold-to-align to nearest peg tag: right trigger. Not bound unless ALIGN_ENABLED.
-        if (AlignConstants.ALIGN_ENABLED) {
+        if (AlignConstants.ALIGN_ENABLED && FieldLayoutLoader.isAvailable()) {
             final AlignToPegCommand align =
-                new AlignToPegCommand(drivetrain, m_VisionSubsystem::getLastAcceptedTimestamp);
+                new AlignToPegCommand(drivetrain, m_VisionSubsystem::getLastAcceptedTimestampForTag);
+            alignCmd = align;
             joystick.rightTrigger(0.5).whileTrue(align);
 
             // Score: left trigger. Only fires if aligned RIGHT NOW and a piece is held.
@@ -204,11 +208,21 @@ public class RobotContainer {
             // and SCORE_BINDING_ENABLED is false. Replace with a real sensor before enabling.
             final BooleanSupplier pieceHeld = () -> false;
             if (AlignConstants.SCORE_BINDING_ENABLED) {
-                joystick.leftTrigger(0.5).onTrue(Commands.either(
-                    shootCommandGroup(), Commands.none(),
-                    () -> align.isAligned() && pieceHeld.getAsBoolean()));
+                // Re-checked every loop: dropping alignment or the piece stops shooter + indexer.
+                joystick.leftTrigger(0.5).onTrue(AlignGating.gatedWhile(
+                    shootCommandGroup(),
+                    () -> align.isAligned() && pieceHeld.getAsBoolean(),
+                    () -> {
+                        m_ShooterSubsystem.stopShooterCommand();
+                        m_IndexerSubsystem.stopIndexerCommand();
+                    }));
             }
         }
+
+        final AlignToPegCommand alignRef = alignCmd;
+        AlignGating.bindSeedUnlessAligning(joystick.leftBumper(),
+            drivetrain.runOnce(drivetrain::seedFieldCentric),
+            () -> alignRef != null && alignRef.isScheduled());
 
     }
 

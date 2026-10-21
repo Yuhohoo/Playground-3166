@@ -24,6 +24,23 @@ public final class VisionFilter {
             VisionConstants.MAX_YAW_RATE_DEG_PER_SEC, VisionConstants.MAX_FRAME_AGE_SEC);
     }
 
+    /** Number of {@code ids} that are in {@code allowed}; disallowed IDs never count as tags. */
+    public static int countAllowed(int[] ids, int[] allowed) {
+        int n = 0;
+        for (int id : ids) if (contains(allowed, id)) n++;
+        return n;
+    }
+
+    /** Only the allowed IDs, in order. */
+    public static int[] filterAllowed(int[] ids, int[] allowed) {
+        return java.util.Arrays.stream(ids).filter(id -> contains(allowed, id)).toArray();
+    }
+
+    public static boolean contains(int[] ids, int id) {
+        for (int x : ids) if (x == id) return true;
+        return false;
+    }
+
     /** xy std dev (m) = base * (1 + d^2 / k). */
     public static double xyStdDev(double avgTagDistM, double base, double k) {
         return base * (1.0 + avgTagDistM * avgTagDistM / k);

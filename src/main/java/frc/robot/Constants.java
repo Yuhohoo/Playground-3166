@@ -104,14 +104,16 @@ public final class Constants {
     public static final class AlignConstants {
         /**
          * MASTER ENABLE. When false the align button does nothing (not bound).
-         * WARNING: PEG_TAG_IDS and FIELD_LAYOUT below are UNKNOWN placeholders and MUST be
+         * WARNING: PEG_TAG_IDS and the field layout JSON are UNKNOWN placeholders and MUST be
          * verified against the game manual / field before setting this true.
          */
         public static final boolean ALIGN_ENABLED = false;
 
-        /** Field layout choice. PLACEHOLDER - verify which field (welded/andymark) is used. */
-        public static final edu.wpi.first.apriltag.AprilTagFields FIELD_LAYOUT =
-            edu.wpi.first.apriltag.AprilTagFields.k2026RebuiltWelded;
+        /**
+         * Custom Stow and Seal field layout, in src/main/deploy. Shipped as an EMPTY placeholder;
+         * with no tags, alignment and vision fusion stay disabled at runtime.
+         */
+        public static final String FIELD_LAYOUT_FILE = "stow_and_seal_tags.json";
 
         /** PLACEHOLDER - VERIFY: tag IDs next to scoring pegs. Empty = nothing to align to. */
         public static final int[] PEG_TAG_IDS = {};

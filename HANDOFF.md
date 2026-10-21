@@ -15,9 +15,21 @@
 - **Score: Left Trigger** — currently NOT bound (see below).
 - Existing bindings/default commands/autos untouched.
 
+## Field layout (Stow and Seal is a custom local field)
+- The WPILib `k2026RebuiltWelded` guess was removed. Tags load from `src/main/deploy/stow_and_seal_tags.json` (name in `AlignConstants.FIELD_LAYOUT_FILE`) via `align/FieldLayoutLoader` (never throws; warns via DriverStation/stderr).
+- **The shipped JSON is a PLACEHOLDER**: empty `tags` list and made-up `field` length/width (16.0 x 8.0 m). With zero tags (or missing/bad file) the loader returns empty, so **align binding, AlignToPegCommand and vision fusion stay disabled at runtime even if `ALIGN_ENABLED`/`FUSION_ENABLED` are true**.
+- To fill it: measure each tag's center pose in the WPILib blue-origin field frame (meters, z = height) and add entries to `tags`:
+  `{"ID": 1, "pose": {"translation": {"x": 1.0, "y": 2.0, "z": 0.5}, "rotation": {"quaternion": {"W": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0}}}}`
+  (rotation is the tag's orientation; the tag normal faces out of the tag). Set real `field.length`/`field.width`. Use the same layout in the Limelight UI field map. Then redeploy.
+
+## Safety gating (added)
+- **Score** (`AlignGating.gatedWhile`): `aligned && pieceHeld` is re-checked every loop for the whole shot; if it drops, the shoot group is cancelled and shooter + indexer are stopped.
+- **Left bumper seed** is ignored while the align command is scheduled.
+- **Vision freshness is per target tag**: `VisionSubsystem.getLastAcceptedTimestampForTag(id)`; only accepted frames whose fiducials include the target tag count. Fiducials not in `PEG_TAG_IDS` are ignored for fusion and freshness (frames with only other IDs = NO_TAGS). NOTE: with `PEG_TAG_IDS` empty, fusion accepts nothing, so fill it before enabling fusion.
+- Tests: `GatingAndFreshnessTest`, `FieldLayoutLoaderTest`, `AlignVisionTest`.
+
 ## How to enable (all in `Constants`)
-1. `AlignConstants.PEG_TAG_IDS` – fill with real tag IDs (currently empty placeholder; unknown).
-2. `AlignConstants.FIELD_LAYOUT` – verify welded vs AndyMark field.
+1. `AlignConstants.PEG_TAG_IDS` – fill with real tag IDs (currently empty placeholder; unknown), and fill the JSON above.
 3. `VisionConstants.CAMERA_1/CAMERA_2` – match Limelight hostnames; set camera pose in Limelight UI.
 4. `VisionConstants.FUSION_ENABLED = true` (default false so odometry/autos are unchanged) and `AlignConstants.ALIGN_ENABLED = true`.
 5. Scoring: there is **no beam break sensor** in the code. `RobotContainer` has a TODO with `pieceHeld = () -> false`; add a sensor, wire it, then set `SCORE_BINDING_ENABLED = true`. Score fires `shootCommandGroup()` only if `align.isAligned()` and piece held at the moment of press. No auto-score.
