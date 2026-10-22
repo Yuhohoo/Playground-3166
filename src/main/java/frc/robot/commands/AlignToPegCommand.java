@@ -79,10 +79,16 @@ public class AlignToPegCommand extends Command {
     @Override
     public boolean isFinished() { return controller.isFinished(); }
 
+    private Runnable endHandler = () -> {};
+    /** Schedule the driver handoff for both self-completion and interruption. */
+    public void setEndHandler(Runnable handler) { endHandler = java.util.Objects.requireNonNull(handler); }
+
     @Override
     public void end(boolean interrupted) {
+        SmartDashboard.putString("Align/EndReason", interrupted ? "INTERRUPTED" : controller.status().name());
         controller.stop();
         drivetrain.setControl(request.withVelocityX(0).withVelocityY(0).withRotationalRate(0));
+        endHandler.run();
         SmartDashboard.putBoolean("Align/Aligned", false);
     }
 }

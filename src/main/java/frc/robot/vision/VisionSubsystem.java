@@ -44,7 +44,14 @@ public class VisionSubsystem extends SubsystemBase {
         this.alignActive = java.util.Objects.requireNonNull(alignActive);
     }
 
-    public void clearPoseTrust() { bootstrapPolicy.clearPoseTrust(); }
+    public void clearPoseTrust() { bootstrapPolicy.clearPoseTrust(); publishTrust(); }
+
+    public long getTrustDrops() { return bootstrapPolicy.getTrustDrops(); }
+
+    private void publishTrust() {
+        SmartDashboard.putBoolean("Align/PoseTrusted", isPoseTrusted());
+        SmartDashboard.putNumber("Align/TrustDrops", getTrustDrops());
+    }
 
     public boolean isPoseTrusted() { return bootstrapPolicy.isPoseTrusted(); }
 
@@ -62,7 +69,7 @@ public class VisionSubsystem extends SubsystemBase {
     public void periodic() {
         boolean ready = bootstrapPolicy.beginLoop();
         bootstrapPolicy.observeAlign(alignActive.getAsBoolean());
-        SmartDashboard.putBoolean("Align/PoseTrusted", isPoseTrusted());
+        publishTrust();
         // Subsystem periodic precedes trigger polling: defer enable edge for held align triggers.
         if (!ready) return;
         if (!VisionConstants.FUSION_ENABLED || !FieldLayoutLoader.isAvailable()) return;
@@ -118,7 +125,7 @@ public class VisionSubsystem extends SubsystemBase {
             tagFreshness.record(allowed, est.timestampSeconds);
             lastAcceptedTimestamp = Math.max(lastAcceptedTimestamp, est.timestampSeconds);
         }
-        SmartDashboard.putBoolean("Align/PoseTrusted", isPoseTrusted());
+        publishTrust();
         SmartDashboard.putNumber("Vision/LastAcceptedAgeSec", now - lastAcceptedTimestamp);
     }
 }

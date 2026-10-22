@@ -92,6 +92,7 @@ class AlignSimTest {
             new Scenario("auto->teleop short disable", .65, 0, 0, "short-disable", 1),
             new Scenario("moved while disabled", .65, 0, 0, "moved-disable", 1),
             new Scenario("long disable", .65, 0, 0, "long-disable", 1),
+            new Scenario("trust drop mid-align", 1.5, 0, 0, "trust-drop", 1),
             new Scenario("near", .65, 0, 0, "none", 1),
             new Scenario("far", 2.7, 0, 0, "none", 1),
             new Scenario("heading 45deg", 1.4, 0, 45, "none", 1),
@@ -209,7 +210,22 @@ class AlignSimTest {
             // External reset changes only estimation, not the physical robot pose.
             if (s.event.equals("reset") && i==40)
                 estimated = new Pose2d(estimated.getX()+2, estimated.getY(), estimated.getRotation());
+            if (s.event.equals("trust-drop") && i==40) {
+                assertFalse(controller.isFinished());
+                assertEquals(VisionFilter.Result.POSE_JUMP, trust.evaluatePoseJump(
+                    new Pose2d(estimated.getX()+2, estimated.getY(), estimated.getRotation()), estimated, false));
+                assertFalse(controller.isAligned(now));
+                assertEquals(1, trust.getTrustDrops());
+            }
             var output = controller.update(now, estimated, freshness::get);
+            if (s.event.equals("trust-drop") && i>=40) {
+                assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
+                assertTrue(controller.isFinished());
+                assertFalse(controller.isAligned(now));
+                assertEquals(0, output.vxMetersPerSecond);
+                assertEquals(0, output.vyMetersPerSecond);
+                assertEquals(0, output.omegaRadiansPerSecond);
+            }
             if (s.event.equals("reset") && i>=40) {
                 assertEquals(AlignStateMachine.Status.POSE_RESET, controller.status());
                 assertTrue(controller.isFinished());
@@ -257,6 +273,9 @@ class AlignSimTest {
             if (s.event.equals("long-disable") || s.event.equals("moved-disable")) assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
             assertFalse(sawAligned);
             assertEquals(Math.hypot(s.distance, s.side), xy, 1e-9);
+        } else if (s.event.equals("trust-drop")) {
+            assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
+            assertFalse(sawAligned);
         } else if (s.event.equals("reset")) {
             assertEquals(AlignStateMachine.Status.POSE_RESET, controller.status());
             assertFalse(sawAligned);

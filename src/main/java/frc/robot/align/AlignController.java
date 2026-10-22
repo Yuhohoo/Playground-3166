@@ -71,6 +71,7 @@ public final class AlignController {
     }
     public ChassisSpeeds update(double now, Pose2d pose, IntToDoubleFunction freshness) {
         if (!active) return new ChassisSpeeds();
+        if (!poseTrusted.getAsBoolean()) { machine.poseUntrusted(); return new ChassisSpeeds(); }
         if (machine.getStatus() != AlignStateMachine.Status.RUNNING) return new ChassisSpeeds();
         double dt = now - previousTime;
         double distance = pose.getTranslation().getDistance(previousPose.getTranslation());
@@ -109,7 +110,7 @@ public final class AlignController {
     public void stop() {
         if (machine.getStatus() == AlignStateMachine.Status.POSE_RESET) poseResetHandler.run();
         active = false; target = null; targetId = -1; machine.reset(); }
-    public boolean isAligned(double now) { return active && machine.isAligned(now); }
+    public boolean isAligned(double now) { return active && poseTrusted.getAsBoolean() && machine.isAligned(now); }
     public boolean isFinished() { return !active || machine.getStatus() != AlignStateMachine.Status.RUNNING; }
     public int targetId() { return targetId; }
     public Pose2d target() { return target; }

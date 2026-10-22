@@ -87,7 +87,13 @@ public final class VisionBootstrap {
         return result;
     }
 
-    public void clearPoseTrust() { bootstrapped = false; windows.clear(); }
+    private long trustDrops;
+    public long getTrustDrops() { return trustDrops; }
+
+    public void clearPoseTrust() {
+        if (bootstrapped) trustDrops++;
+        bootstrapped = false; windows.clear();
+    }
 
     public void didReset() { bootstrapped = true; windows.clear(); }
 }

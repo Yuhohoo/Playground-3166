@@ -39,9 +39,9 @@ Vision: `MAX_YAW_RATE_DEG_PER_SEC`, `MAX_FRAME_AGE_SEC`, `BASE_XY_STD_DEV_M`, `D
 Align: offsets (`OFFSET_DISTANCE_M`, `OFFSET_LATERAL_M` — verify sign of lateral), XY/THETA PID gains, speed/accel caps, `XY_TOLERANCE_M`, `THETA_TOLERANCE_RAD`, `ALIGNED_LOOPS`, `TIMEOUT_SEC`, `LOST_TARGET_SEC`.
 
 ## Safety notes
-- First-test driver rule: **release the stick before releasing the align button**; the release handoff holds zero with the drivetrain requirement until left-stick magnitude and right-stick X are inside the existing 10% manual deadbands, then default drive resumes.
+- First-test driver rule: **release the stick before releasing the align button**; the end/release handoff holds zero with the drivetrain requirement until left-stick magnitude and right-stick X are inside the existing 10% manual deadbands, then default drive resumes.
 - Risk 5: time the 0.5 s freshness grace and physical stopping distance on the real robot.
-- Risks 1 (unknown alliance), 2 (diagonal speed cap), and pose-jump rejection are fixed in align/vision code only; drivetrain, default drive and drive constants remain untouched. The added align binding block alone also gains the release handoff. Known red/blue alliances retain blue-origin coordinates; unknown alliance refuses startup with zero output and not aligned. The 0.5 m pose-jump threshold is a starting guess, not measured, tune on robot.
+- Risks 1 (unknown alliance), 2 (diagonal speed cap), and pose-jump rejection are fixed in align/vision code only; drivetrain, default drive and drive constants remain untouched. The added align binding block alone also gains the end/release handoff. Known red/blue alliances retain blue-origin coordinates; unknown alliance refuses startup with zero output and not aligned. The 0.5 m pose-jump threshold is a starting guess, not measured, tune on robot.
 - First real run: on blocks with an E-stop operator, blue then red, at low speed; then test slowly on the floor.
 - Limelight computes pose using the field map uploaded to the camera. Upload the same measured stow_and_seal layout to each Limelight and check they match the robot layout: **NOT VERIFIED**.
 - On each enable, vision defers its first enabled periodic to let held triggers schedule (subsystem periodic precedes trigger polling). The first otherwise accepted known-layout frame may bootstrap translation only while align is NOT scheduled: two distinct layout tags, or five consecutive same-ID single-tag readings with maximum pairwise translation spread <= 0.05 m, RawFiducial distToCamera < 2.0 m and ambiguity < 0.2 (both starting guesses, not measured, tune on robot). Gyro heading is retained. While align is scheduled, eligible frames use the normal 0.5 m jump gate and fusion, never reset; bootstrap remains pending. After bootstrap all frames use the normal gate. Disabled fusion remains inactive. Capture translation is not latency propagated for reset.
@@ -95,3 +95,13 @@ still converges without re-bootstrap; long disable still refuses. All 19 scenari
 alignment and cap violations. POSE_TRUST_MAX_DISABLE_S remains 5.0, commented as a starting guess,
 not measured, tune on robot. No drive/control changes; all three switches remain false and deploy
 tags remain empty. No robot validation or deployment.
+
+
+## Running alignment trust and end handoff
+AlignController checks pose trust before every running update and returns zero immediately with POSE_UNTRUSTED on loss, including a jump-rejected frame. isAligned checks the live trust supplier as well, so it is false from the drop cycle even before execute; the terminal state stays not aligned after trust recovers. AlignToPegCommand publishes Align/EndReason before clearing its controller, sends zero on end, and invokes the end handoff callback.
+
+Our ALIGN_ENABLED block schedules one shared DriverHandoff hold-zero command from every align end (self-completion and interruption). The separate trigger-release binding is removed. With the trigger still held, alignment does not restart; drive stays owned with zero output until sticks enter the existing deadbands. Releasing the trigger after self-completion does not schedule a second handoff. No default-command or drivetrain changes.
+
+VisionSubsystem publishes Align/TrustDrops from its testable VisionBootstrap tracker. Each true-to-false transition increments once, including jump rejection, long disable and explicit trust clearing; repeated clears while already false do not increment. Only bootstrap restores trust.
+
+Validation: **53 tests passed, 0 failures/errors/skips** using `JAVA_HOME=~/jdk17 bash ./gradlew build test`. Separate sim rerun: **4 tests / 20 scenarios passed**. New `trust drop mid-align` row ends POSE_UNTRUSTED, zero false alignment/cap violations, final xy 0.863 m; all prior scenario metrics unchanged. Regressions include trust loss after aligned, arbitrary clearing, trust-drop counter transitions, and held-trigger scheduler handoff before default drive. Not robot validated or deployed. All three enable flags remain false, deployment tags empty, and placeholders test-only.

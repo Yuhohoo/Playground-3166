@@ -206,13 +206,14 @@ public class RobotContainer {
             m_VisionSubsystem.setAlignActiveSupplier(align::isScheduled);
             edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Align/HandoffHoldingZero", false);
             edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString("Align/HandoffReason", "");
-            joystick.rightTrigger(0.5).whileTrue(align);
-            // Retain drivetrain ownership after release until the manual request is neutral.
-            joystick.rightTrigger(0.5).onFalse(frc.robot.align.DriverHandoff.holdZero(
+            // One handoff on every end, including self-completion with the trigger held.
+            final var handoff = frc.robot.align.DriverHandoff.holdZero(
                 () -> drivetrain.setControl(new SwerveRequest.FieldCentric()
                     .withVelocityX(0).withVelocityY(0).withRotationalRate(0)),
                 () -> frc.robot.align.DriverHandoff.sticksNeutral(
-                    joystick.getLeftX(), joystick.getLeftY(), joystick.getRightX()), drivetrain));
+                    joystick.getLeftX(), joystick.getLeftY(), joystick.getRightX()), drivetrain);
+            align.setEndHandler(handoff::schedule);
+            joystick.rightTrigger(0.5).whileTrue(align);
 
             // Score: left trigger. Only fires if aligned RIGHT NOW and a piece is held.
             // TODO: no beam break sensor exists in this codebase; pieceHeld is hardwired false

@@ -17,6 +17,85 @@ class AlignSafetyTest {
         return policy::isPoseTrusted;
     }
 
+    @Test void trustDropEndsRunningAlignmentAndNeverReportsAligned() {
+        for (boolean jump : new boolean[]{true, false}) {
+            var trust = new frc.robot.vision.VisionBootstrap();
+            trust.didReset();
+            var controller = new AlignController(
+                () -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue), trust::isPoseTrusted);
+            var tag = new Pose2d(3, 3, new Rotation2d());
+            var target = AlignMath.targetPose(tag, Constants.AlignConstants.OFFSET_DISTANCE_M, 0);
+            controller.start(0, target, new ChassisSpeeds(), Map.of(4, tag), new int[]{4});
+            for (int i=0; i<Constants.AlignConstants.ALIGNED_LOOPS; i++) {
+                double now = i*.02;
+                controller.update(now, target, id -> now);
+            }
+            assertTrue(controller.isAligned(.18));
+            if (jump) assertEquals(VisionFilter.Result.POSE_JUMP, trust.evaluatePoseJump(
+                new Pose2d(target.getX()+2, target.getY(), target.getRotation()), target, false));
+            else trust.clearPoseTrust();
+            assertFalse(controller.isAligned(.20)); // Even before command execute this cycle.
+            assertEquals(1, trust.getTrustDrops());
+            trust.clearPoseTrust();
+            assertEquals(1, trust.getTrustDrops());
+            for (int i=10; i<30; i++) {
+                double now = i*.02;
+                var out = controller.update(now, target, id -> now);
+                assertEquals(0, out.vxMetersPerSecond);
+                assertEquals(0, out.vyMetersPerSecond);
+                assertEquals(0, out.omegaRadiansPerSecond);
+                assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
+                assertTrue(controller.isFinished());
+                assertFalse(controller.isAligned(now));
+                trust.didReset(); // Trust recovery must not resurrect this alignment.
+            }
+            trust.clearPoseTrust();
+            assertEquals(2, trust.getTrustDrops());
+        }
+    }
+
+    @Test void selfCompletionWhileTriggerHeldHandsOffBeforeDefaultDrive() {
+        edu.wpi.first.hal.HAL.initialize(500, 0);
+        var scheduler = edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance();
+        scheduler.cancelAll();
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.setEnabled(true);
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.notifyNewData();
+        var drive = new edu.wpi.first.wpilibj2.command.SubsystemBase() {};
+        boolean[] held = {false}, neutral = {false}, done = {false};
+        int[] manual = {0}, zeros = {0}, starts = {0};
+        var handoff = DriverHandoff.holdZero(() -> zeros[0]++, () -> neutral[0], drive);
+        var align = new edu.wpi.first.wpilibj2.command.FunctionalCommand(
+            () -> starts[0]++, () -> {}, interrupted -> handoff.schedule(), () -> done[0], drive);
+        var trigger = new edu.wpi.first.wpilibj2.command.button.Trigger(() -> held[0]);
+        trigger.whileTrue(align);
+        drive.setDefaultCommand(drive.run(() -> manual[0]++));
+        try {
+            held[0] = true;
+            scheduler.run();
+            done[0] = true;
+            scheduler.run();
+            for (int i=0; i<10; i++) scheduler.run();
+            assertTrue(handoff.isScheduled());
+            assertFalse(align.isScheduled());
+            assertEquals(1, starts[0]);
+            assertEquals(0, manual[0]);
+            assertTrue(zeros[0] >= 10);
+            held[0] = false; // Release must not restart or duplicate the handoff.
+            scheduler.run();
+            assertTrue(handoff.isScheduled());
+            neutral[0] = true;
+            scheduler.run(); scheduler.run();
+            assertFalse(handoff.isScheduled());
+            assertTrue(manual[0] > 0);
+        } finally {
+            scheduler.cancelAll();
+            scheduler.getDefaultButtonLoop().clear();
+            scheduler.unregisterSubsystem(drive);
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.setEnabled(false);
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.notifyNewData();
+        }
+    }
+
     @Test void unknownAllianceNeverMoves() {
         var controller = new AlignController(Optional::empty, trustedPose());
         controller.start(0, new Pose2d(), new ChassisSpeeds(),
