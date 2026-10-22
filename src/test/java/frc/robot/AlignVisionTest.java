@@ -145,6 +145,15 @@ class AlignVisionTest {
     }
 
     @Test
+    void poseJumpGate() {
+        var origin = new Pose2d();
+        assertEquals(Result.ACCEPT, VisionFilter.evaluatePoseJump(new Pose2d(.3, .4, Rotation2d.kZero), origin));
+        assertEquals(Result.POSE_JUMP, VisionFilter.evaluatePoseJump(new Pose2d(.31, .4, Rotation2d.kZero), origin));
+        assertEquals(Result.ACCEPT, VisionFilter.evaluatePoseJump(new Pose2d(.1, .1, Rotation2d.fromDegrees(180)), origin));
+        assertEquals(Result.INVALID, VisionFilter.evaluatePoseJump(new Pose2d(Double.NaN, 0, Rotation2d.kZero), origin));
+    }
+
+    @Test
     void stdDevGrowsWithDistance() {
         assertEquals(0.5, VisionFilter.xyStdDev(0, 0.5, 4), 1e-12);
         assertEquals(0.5 * (1 + 16.0 / 4), VisionFilter.xyStdDev(4, 0.5, 4), 1e-12);

@@ -6,7 +6,7 @@ import frc.robot.Constants.VisionConstants;
 public final class VisionFilter {
     private VisionFilter() {}
 
-    public enum Result { ACCEPT, UNKNOWN_ID, NO_TAGS, SPINNING, STALE, DUPLICATE, INVALID }
+    public enum Result { ACCEPT, POSE_JUMP, UNKNOWN_ID, NO_TAGS, SPINNING, STALE, DUPLICATE, INVALID }
 
     public static Result evaluate(int tagCount, double yawRateDegPerSec, double frameTimestampSec,
             double nowSec, double lastAcceptedTimestampSec, double maxYawRateDegPerSec, double maxAgeSec) {
@@ -22,6 +22,25 @@ public final class VisionFilter {
             double nowSec, double lastAcceptedTimestampSec) {
         return evaluate(tagCount, yawRateDegPerSec, frameTimestampSec, nowSec, lastAcceptedTimestampSec,
             VisionConstants.MAX_YAW_RATE_DEG_PER_SEC, VisionConstants.MAX_FRAME_AGE_SEC);
+    }
+
+    /** Compare raw blue-origin measurement translation against the current estimate. */
+    public static Result evaluatePoseJump(edu.wpi.first.math.geometry.Pose2d measurement,
+            edu.wpi.first.math.geometry.Pose2d estimated) {
+        double distance = measurement.getTranslation().getDistance(estimated.getTranslation());
+        if (!Double.isFinite(distance)) return Result.INVALID;
+        return distance > VisionConstants.VISION_MAX_POSE_JUMP_M ? Result.POSE_JUMP : Result.ACCEPT;
+    }
+
+    public static boolean shouldBootstrap(boolean bootstrapped, int[] ids, int[] layoutIds) {
+        return !bootstrapped && evaluateIds(ids, layoutIds) == Result.ACCEPT
+            && java.util.Arrays.stream(ids).distinct().count() >= 2;
+    }
+
+    public static Result evaluatePoseJump(edu.wpi.first.math.geometry.Pose2d measured,
+            edu.wpi.first.math.geometry.Pose2d estimated, boolean bootstrap) {
+        var result = evaluatePoseJump(measured, estimated);
+        return bootstrap && result == Result.POSE_JUMP ? Result.ACCEPT : result;
     }
 
     /** All fiducials must belong to the loaded layout; peg selection is independent. */

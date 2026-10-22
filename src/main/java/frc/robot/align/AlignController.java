@@ -1,6 +1,10 @@
 package frc.robot.align;
 
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
+import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import java.util.function.IntToDoubleFunction;
 import edu.wpi.first.math.controller.ProfiledPIDController;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -27,7 +31,10 @@ public final class AlignController {
     private Pose2d target;
     private int targetId = -1;
     private boolean active;
-    public AlignController() {
+    private final Supplier<Optional<Alliance>> alliance;
+    public AlignController() { this(DriverStation::getAlliance); }
+    public AlignController(Supplier<Optional<Alliance>> alliance) {
+        this.alliance = alliance;
         thetaPID.enableContinuousInput(-Math.PI, Math.PI);
         xPID.setTolerance(AlignConstants.XY_TOLERANCE_M);
         yPID.setTolerance(AlignConstants.XY_TOLERANCE_M);
@@ -36,6 +43,8 @@ public final class AlignController {
     public void start(double now, Pose2d pose, ChassisSpeeds fieldSpeeds,
             Map<Integer, Pose2d> tags, int[] pegIds) {
         stop();
+        // Alliance is a start gate only; all poses and outputs remain blue-origin.
+        if (alliance.get().isEmpty()) return;
         machine.start(now);
         var id = AlignMath.nearestTag(pose, pegIds, tags);
         if (id.isEmpty()) return;
@@ -59,8 +68,9 @@ public final class AlignController {
         double cap = AlignConstants.MAX_SPEED_MPS;
         double wCap = AlignConstants.MAX_ANGULAR_RAD_PER_SEC;
 
-        return new ChassisSpeeds(Math.max(-cap, Math.min(cap, vx)),
-            Math.max(-cap, Math.min(cap, vy)), Math.max(-wCap, Math.min(wCap, w)));
+        double norm = Math.hypot(vx, vy);
+        if (norm > cap) { vx *= cap / norm; vy *= cap / norm; }
+        return new ChassisSpeeds(vx, vy, Math.max(-wCap, Math.min(wCap, w)));
     }
     public void stop() { active = false; target = null; targetId = -1; machine.reset(); }
     public boolean isAligned(double now) { return active && machine.isAligned(now); }

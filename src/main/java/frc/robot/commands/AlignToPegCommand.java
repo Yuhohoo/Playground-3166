@@ -25,9 +25,15 @@ public class AlignToPegCommand extends Command {
     private final SwerveRequest.FieldCentric request = new SwerveRequest.FieldCentric()
         .withForwardPerspective(SwerveRequest.ForwardPerspectiveValue.BlueAlliance);
 
-    private final frc.robot.align.AlignController controller = new frc.robot.align.AlignController();
+    private final frc.robot.align.AlignController controller;
 
     public AlignToPegCommand(CommandSwerveDrivetrain drivetrain, IntToDoubleFunction lastVisionTimestamp) {
+        this(drivetrain, lastVisionTimestamp, edu.wpi.first.wpilibj.DriverStation::getAlliance);
+    }
+
+    public AlignToPegCommand(CommandSwerveDrivetrain drivetrain, IntToDoubleFunction lastVisionTimestamp,
+            java.util.function.Supplier<java.util.Optional<edu.wpi.first.wpilibj.DriverStation.Alliance>> alliance) {
+        controller = new frc.robot.align.AlignController(alliance);
         this.drivetrain = drivetrain;
         this.lastVisionTimestamp = lastVisionTimestamp;
         if (AlignConstants.ALIGN_ENABLED) {
@@ -47,6 +53,7 @@ public class AlignToPegCommand extends Command {
     @Override
     public void initialize() {
         controller.stop();
+        drivetrain.setControl(request.withVelocityX(0).withVelocityY(0).withRotationalRate(0));
         if (!AlignConstants.ALIGN_ENABLED || !FieldLayoutLoader.isAvailable()) return;
         var state = drivetrain.getState();
         controller.start(Timer.getFPGATimestamp(), state.Pose,

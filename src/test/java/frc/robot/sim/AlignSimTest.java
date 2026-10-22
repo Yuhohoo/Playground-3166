@@ -30,8 +30,25 @@ class AlignSimTest {
         command.initialize(); command.execute(); command.end(false);
         assertEquals(0, shots[0], "unsafe scoring");
     }
+    @Test void diagonalCapPreservesDirection() {
+        var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
+        var target = AlignMath.targetPose(tags.get(4), AlignConstants.OFFSET_DISTANCE_M, 0);
+        var pose = new Pose2d(target.getX()-3, target.getY()-3, target.getRotation());
+        controller.start(0, pose, new ChassisSpeeds(), tags, new int[]{4});
+        boolean reachedCap = false;
+        for (int i=0; i<200; i++) {
+            double now = i*.02;
+            var output = controller.update(now, pose, id -> now);
+            double norm = Math.hypot(output.vxMetersPerSecond, output.vyMetersPerSecond);
+            assertTrue(norm <= AlignConstants.MAX_SPEED_MPS+1e-9);
+            assertEquals(output.vxMetersPerSecond, output.vyMetersPerSecond, 1e-9);
+            reachedCap |= norm >= AlignConstants.MAX_SPEED_MPS-1e-9;
+        }
+        assertTrue(reachedCap);
+    }
+
     @Test void emptyPegSelectionEndsWithoutOutput() {
-        var controller = new AlignController();
+        var controller = new AlignController(() -> java.util.Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
         controller.start(0, new Pose2d(), new ChassisSpeeds(), tags, new int[0]);
         assertNull(controller.target()); assertEquals(-1, controller.targetId());
         assertTrue(controller.isFinished()); assertFalse(controller.isAligned(0));
@@ -42,7 +59,7 @@ class AlignSimTest {
     }
     @Test void scoreAfterAlignmentButLostTargetNeverShoots() {
         edu.wpi.first.hal.HAL.initialize(500, 0);
-        var controller = new AlignController();
+        var controller = new AlignController(() -> java.util.Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
         var target = AlignMath.targetPose(tags.get(4), AlignConstants.OFFSET_DISTANCE_M, 0);
         controller.start(0, target, new ChassisSpeeds(), tags, new int[]{4});
         for (int i=0; i<AlignConstants.ALIGNED_LOOPS; i++) {
@@ -68,6 +85,8 @@ class AlignSimTest {
             new Scenario("far", 2.7, 0, 0, "none", 1),
             new Scenario("heading 45deg", 1.4, 0, 45, "none", 1),
             new Scenario("FOV edge", 1.4, 0, 49, "none", 1),
+            new Scenario("red alliance", 1.5, 1.0, 0, "red", 1),
+            new Scenario("unknown alliance", 1.5, 1.0, 0, "unknown", 1),
             new Scenario("side", 1.5, 1.0, 0, "none", 1),
             new Scenario("lost halfway", 2.7, 0, 0, "lost", 1),
             new Scenario("release/restart", 2.7, 0, 0, "release", 1),
@@ -88,7 +107,9 @@ class AlignSimTest {
         var robot = new SimRobot(new Pose2d(target.getX()-s.distance, target.getY()+s.side,
             Rotation2d.fromDegrees(s.heading)));
         assertEquals(10.84, robot.maxSpeed, 1e-6); assertTrue(robot.manualDeadband > 1);
-        var controller = new AlignController();
+        var controller = new AlignController(() -> s.event.equals("unknown") ? Optional.empty()
+            : Optional.of(s.event.equals("red") ? edu.wpi.first.wpilibj.DriverStation.Alliance.Red
+                : edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
         controller.start(0, robot.pose, robot.speed, tags, AlignConstants.PEG_TAG_IDS);
         scoreDenied(controller, 0);
         var freshness = new TagFreshness();
@@ -96,6 +117,7 @@ class AlignSimTest {
         Pose2d estimated = robot.pose;
         double converge = Double.NaN, overshoot = 0, previousError = target.getX()-robot.pose.getX();
         int signs = 0, falseAligned = 0, violations = 0;
+        boolean bootstrapped = false, jumpRejected = false;
         boolean released = false, restarted = false, sawAligned = false, unknownRejected = false;
         double stoppedAt = Double.NaN;
         for (int i=0; i<=250; i++) {
@@ -116,8 +138,14 @@ class AlignSimTest {
             while (!pending.isEmpty() && pending.peek().delivery <= now+1e-9) {
                 var frame = pending.remove();
                 var valid = VisionFilter.evaluateIds(frame.ids, layoutIds);
+                boolean bootstrap = VisionFilter.shouldBootstrap(bootstrapped, frame.ids, layoutIds);
+                if (valid == VisionFilter.Result.ACCEPT) {
+                    valid = VisionFilter.evaluatePoseJump(frame.pose, estimated, bootstrap);
+                    if (valid == VisionFilter.Result.POSE_JUMP) jumpRejected = true;
+                }
                 if (valid == VisionFilter.Result.ACCEPT && VisionFilter.evaluate(frame.ids.length, 0,
                         frame.captured, now, Double.NEGATIVE_INFINITY) == VisionFilter.Result.ACCEPT) {
+                    bootstrapped |= bootstrap;
                     // Latency compensation with exact model odometry; deliberately not a CTRE estimator claim.
                     estimated = new Pose2d(frame.pose.getX()+robot.speed.vxMetersPerSecond*(now-frame.captured),
                         frame.pose.getY()+robot.speed.vyMetersPerSecond*(now-frame.captured),
@@ -148,7 +176,12 @@ class AlignSimTest {
                 assertEquals(0, output.omegaRadiansPerSecond);
                 if (Double.isNaN(stoppedAt)) stoppedAt = now;
             }
-            if (Math.abs(output.vxMetersPerSecond)>1+1e-9 || Math.abs(output.vyMetersPerSecond)>1+1e-9
+            if (s.event.equals("unknown")) {
+                assertTrue(controller.isFinished()); assertFalse(controller.isAligned(now));
+                assertEquals(0, Math.hypot(output.vxMetersPerSecond, output.vyMetersPerSecond));
+                assertEquals(0, output.omegaRadiansPerSecond);
+            }
+            if (Math.hypot(output.vxMetersPerSecond, output.vyMetersPerSecond)>AlignConstants.MAX_SPEED_MPS+1e-9
                     || Math.abs(output.omegaRadiansPerSecond)>Math.PI+1e-9) violations++;
             // Test-only elevator policy: no elevator exists in production. Apply after controller output.
             output.vxMetersPerSecond = Math.max(-s.cap, Math.min(s.cap, output.vxMetersPerSecond));
@@ -173,7 +206,10 @@ class AlignSimTest {
         assertEquals(0, falseAligned, s.name); assertEquals(0, violations, s.name);
         double xy = robot.pose.getTranslation().getDistance(target.getTranslation());
         double theta = Math.abs(robot.pose.getRotation().minus(target.getRotation()).getDegrees());
-        if (s.event.equals("lost")) {
+        if (s.event.equals("unknown")) {
+            assertFalse(sawAligned);
+            assertEquals(Math.hypot(s.distance, s.side), xy, 1e-9);
+        } else if (s.event.equals("lost")) {
             assertEquals(AlignStateMachine.Status.LOST_TARGET, controller.status());
             assertTrue(stoppedAt <= 1.52); assertFalse(sawAligned);
         } else if (s.event.equals("timeout")) {
@@ -184,10 +220,11 @@ class AlignSimTest {
             assertTrue(overshoot<.15); assertTrue(signs<15);
         }
         if (s.event.equals("mixed")) assertTrue(unknownRejected);
+        if (s.event.equals("jump")) assertTrue(jumpRejected, "injected jump must be rejected");
         // An alignment that was achieved cannot authorize a shot after its target becomes stale.
         if (sawAligned) { assertFalse(controller.isAligned(6)); scoreDenied(controller, 6); }
         return String.format(Locale.ROOT,"| %s | %s | %.3f | %.2f | %.3f | %d | %d | %s | %d |%n",
             s.name, Double.isNaN(converge)?"—":String.format(Locale.ROOT,"%.2f",converge), xy, theta,
-            overshoot, signs, falseAligned, controller.status(), violations);
+            overshoot, signs, falseAligned, s.event.equals("unknown") ? "REFUSED" : controller.status(), violations);
     }
 }

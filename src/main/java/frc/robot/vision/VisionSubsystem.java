@@ -19,6 +19,8 @@ public class VisionSubsystem extends SubsystemBase {
     private final List<String> cameras = new ArrayList<>();
     private final List<Double> lastPerCamera = new ArrayList<>();
     private final TagFreshness tagFreshness = new TagFreshness();
+    private boolean bootstrapped;
+    private boolean wasEnabled;
     private double lastAcceptedTimestamp = Double.NEGATIVE_INFINITY;
 
     public VisionSubsystem(CommandSwerveDrivetrain drivetrain) {
@@ -43,7 +45,10 @@ public class VisionSubsystem extends SubsystemBase {
 
     @Override
     public void periodic() {
-        if (!VisionConstants.FUSION_ENABLED || !FieldLayoutLoader.isAvailable()) return;
+        boolean enabled = edu.wpi.first.wpilibj.DriverStation.isEnabled();
+        if (enabled && !wasEnabled) bootstrapped = false;
+        wasEnabled = enabled;
+        if (!enabled || !VisionConstants.FUSION_ENABLED || !FieldLayoutLoader.isAvailable()) return;
         var state = drivetrain.getState();
         double headingDeg = state.Pose.getRotation().getDegrees();
         double yawRateDegPerSec = Math.toDegrees(state.Speeds.omegaRadiansPerSecond);
@@ -58,17 +63,28 @@ public class VisionSubsystem extends SubsystemBase {
             int[] ids = est.rawFiducials == null ? new int[0]
                 : java.util.Arrays.stream(est.rawFiducials).mapToInt(f -> f.id).toArray();
             int[] allowed = VisionFilter.filterAllowed(ids, AlignConstants.PEG_TAG_IDS);
-            var result = VisionFilter.evaluateIds(ids, FieldLayoutLoader.getDeployLayout().orElseThrow()
-                .getTags().stream().mapToInt(t -> t.ID).toArray());
+            int[] layoutIds = FieldLayoutLoader.getDeployLayout().orElseThrow()
+                .getTags().stream().mapToInt(t -> t.ID).toArray();
+            var result = VisionFilter.evaluateIds(ids, layoutIds);
             if (result == VisionFilter.Result.ACCEPT) result = VisionFilter.evaluate(ids.length, yawRateDegPerSec, est.timestampSeconds,
                 now, lastPerCamera.get(i));
+            boolean bootstrap = VisionFilter.shouldBootstrap(bootstrapped, ids, layoutIds);
+            if (result == VisionFilter.Result.ACCEPT)
+                result = VisionFilter.evaluatePoseJump(est.pose, drivetrain.getState().Pose, bootstrap);
             SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
             if (result != VisionFilter.Result.ACCEPT) continue;
 
             double[] sd = VisionFilter.stdDevs(est.avgTagDist);
             // Drivetrain override applies Utils.fpgaToCurrentTime; pass the raw FPGA timestamp.
-            drivetrain.addVisionMeasurement(est.pose, est.timestampSeconds,
-                VecBuilder.fill(sd[0], sd[1], sd[2]));
+            if (bootstrap) {
+                // Initialize translation, retaining the authoritative gyro heading.
+                drivetrain.resetPose(new edu.wpi.first.math.geometry.Pose2d(
+                    est.pose.getTranslation(), drivetrain.getState().Pose.getRotation()));
+                bootstrapped = true;
+            } else {
+                drivetrain.addVisionMeasurement(est.pose, est.timestampSeconds,
+                    VecBuilder.fill(sd[0], sd[1], sd[2]));
+            }
             lastPerCamera.set(i, est.timestampSeconds);
             tagFreshness.record(allowed, est.timestampSeconds);
             lastAcceptedTimestamp = Math.max(lastAcceptedTimestamp, est.timestampSeconds);

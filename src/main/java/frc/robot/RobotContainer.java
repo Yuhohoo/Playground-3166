@@ -202,6 +202,12 @@ public class RobotContainer {
                 new AlignToPegCommand(drivetrain, m_VisionSubsystem::getLastAcceptedTimestampForTag);
             alignCmd = align;
             joystick.rightTrigger(0.5).whileTrue(align);
+            // Retain drivetrain ownership after release until the manual request is neutral.
+            joystick.rightTrigger(0.5).onFalse(Commands.run(
+                () -> drivetrain.setControl(new SwerveRequest.FieldCentric()
+                    .withVelocityX(0).withVelocityY(0).withRotationalRate(0)), drivetrain)
+                .until(() -> frc.robot.align.DriverHandoff.sticksNeutral(
+                    joystick.getLeftX(), joystick.getLeftY(), joystick.getRightX())));
 
             // Score: left trigger. Only fires if aligned RIGHT NOW and a piece is held.
             // TODO: no beam break sensor exists in this codebase; pieceHeld is hardwired false

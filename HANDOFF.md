@@ -39,14 +39,19 @@ Vision: `MAX_YAW_RATE_DEG_PER_SEC`, `MAX_FRAME_AGE_SEC`, `BASE_XY_STD_DEV_M`, `D
 Align: offsets (`OFFSET_DISTANCE_M`, `OFFSET_LATERAL_M` — verify sign of lateral), XY/THETA PID gains, speed/accel caps, `XY_TOLERANCE_M`, `THETA_TOLERANCE_RAD`, `ALIGNED_LOOPS`, `TIMEOUT_SEC`, `LOST_TARGET_SEC`.
 
 ## Safety notes
-- Test first on blocks, then slow with caps lowered and someone on e-stop.
+- First-test driver rule: **release the stick before releasing the align button**; the release handoff holds zero with the drivetrain requirement until left-stick magnitude and right-stick X are inside the existing 10% manual deadbands, then default drive resumes.
+- Risk 5: time the 0.5 s freshness grace and physical stopping distance on the real robot.
+- Risks 1 (unknown alliance), 2 (diagonal speed cap), and pose-jump rejection are fixed in align/vision code only; drivetrain, default drive and drive constants remain untouched. The added align binding block alone also gains the release handoff. Known red/blue alliances retain blue-origin coordinates; unknown alliance refuses startup with zero output and not aligned. The 0.5 m pose-jump threshold is a starting guess, not measured, tune on robot.
+- First real run: on blocks with an E-stop operator, blue then red, at low speed; then test slowly on the floor.
+- Limelight computes pose using the field map uploaded to the camera. Upload the same measured stow_and_seal layout to each Limelight and check they match the robot layout: **NOT VERIFIED**.
+- On each robot enable, the first otherwise accepted frame seeing at least two distinct tags, all in the layout, bypasses the 0.5 m gate and calls `resetPose` with measured translation and current gyro heading. This deliberately trusts that frame to recover arbitrary startup odometry error; validate map/extrinsics first. Single-tag readings before bootstrap still use the 0.5 m gate, and accepting them does not complete bootstrap. After bootstrap all frames use the gate. Fusion is inactive while disabled. Reset uses capture translation without latency propagation; validate reset timing on blocks.
 - Tag pose / field-layout / offset sign errors will drive the robot at the wrong spot or into a wall.
 - Timeout is total time since button press (including after alignment) — the command ends and alignment goes false.
 - Heading for MegaTag2 comes from the fused drivetrain pose rotation; make sure gyro is seeded correctly (left bumper / button 7) before trusting vision.
 - Align/vision dashboard keys: `Align/*`, `Vision/*`.
 
 ## Closed-loop validation and changes
-- `align/AlignController` contains the exact profiled PID, per-axis caps, target selection and state machine used by `AlignToPegCommand` and the headless simulation. Start resets controllers using field-relative measured velocity. End/release/loss/timeout explicitly return or send zero; no prior nonzero request is left latched by alignment.
+- `align/AlignController` contains the exact profiled PID, vector translation cap, target selection and state machine used by `AlignToPegCommand` and the headless simulation. Start resets controllers using field-relative measured velocity. End/release/loss/timeout explicitly return or send zero; no prior nonzero request is left latched by alignment.
 - `src/test/resources/placeholder_tags.json` contains synthetic 4/8/1 poses; its adjacent README marks PLACEHOLDER / NOT MEASURED. It is test-only. Deployment JSON remains empty.
 - `src/test/java/frc/robot/sim/AlignSimTest.java` runs 50 Hz with deterministic Gaussian noise, 60 ms latency, 8% dropouts, 100-degree FOV, ideal odometry latency compensation and acceleration-limited kinematics. Drive maximums/deadband are read from source without starting CAN. There is no drive slew limiter and align does not inherit manual deadband.
 - Scenarios cover near/far, heading, FOV edge, lateral offset, target loss, release/restart, mixed non-peg and unknown IDs, transient pose jump, total timeout, and hypothetical elevator caps. Scoring before alignment and after target freshness expires is denied through `AlignGating`.

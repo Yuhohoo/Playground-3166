@@ -92,6 +92,8 @@ public final class Constants {
         public static final double MAX_YAW_RATE_DEG_PER_SEC = 720.0;
         /** PLACEHOLDER - TUNE ON ROBOT: reject frames whose timestamp is older than this (s). */
         public static final double MAX_FRAME_AGE_SEC = 0.5;
+        /** starting guess, not measured, tune on robot */
+        public static final double VISION_MAX_POSE_JUMP_M = 0.5;
         /** PLACEHOLDER - TUNE ON ROBOT: base xy std dev (m) at zero distance. */
         public static final double BASE_XY_STD_DEV_M = 0.5;
         /** PLACEHOLDER - TUNE ON ROBOT: distance (m^2) scale; std = base * (1 + d^2 / k). */
