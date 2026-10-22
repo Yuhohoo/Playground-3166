@@ -206,13 +206,13 @@ public class RobotContainer {
             m_VisionSubsystem.setAlignActiveSupplier(align::isScheduled);
             edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Align/HandoffHoldingZero", false);
             edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString("Align/HandoffReason", "");
-            // One handoff on every end, including self-completion with the trigger held.
+            // End arms an enabled-only trigger; its next poll hands off before default execution.
             final var handoff = frc.robot.align.DriverHandoff.holdZero(
                 () -> drivetrain.setControl(new SwerveRequest.FieldCentric()
                     .withVelocityX(0).withVelocityY(0).withRotationalRate(0)),
                 () -> frc.robot.align.DriverHandoff.sticksNeutral(
                     joystick.getLeftX(), joystick.getLeftY(), joystick.getRightX()), drivetrain);
-            align.setEndHandler(handoff::schedule);
+            frc.robot.align.DriverHandoff.wireEnd(align, handoff);
             joystick.rightTrigger(0.5).whileTrue(align);
 
             // Score: left trigger. Only fires if aligned RIGHT NOW and a piece is held.

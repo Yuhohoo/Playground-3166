@@ -18,6 +18,7 @@ public class VisionSubsystem extends SubsystemBase {
     private final CommandSwerveDrivetrain drivetrain;
     private final List<String> cameras = new ArrayList<>();
     private final List<Double> lastPerCamera = new ArrayList<>();
+    private final JumpRejectCounter jumpRejects = new JumpRejectCounter();
     private final TagFreshness tagFreshness = new TagFreshness();
     private java.util.function.BooleanSupplier alignActive = () -> false;
     private final VisionBootstrap bootstrapPolicy;
@@ -34,6 +35,7 @@ public class VisionSubsystem extends SubsystemBase {
         for (String name : new String[] {VisionConstants.CAMERA_1, VisionConstants.CAMERA_2}) {
             if (name != null && !name.isEmpty()) {
                 cameras.add(name);
+                SmartDashboard.putNumber("Align/JumpRejects/" + name, 0);
                 lastPerCamera.add(Double.NEGATIVE_INFINITY);
             }
         }
@@ -107,6 +109,8 @@ public class VisionSubsystem extends SubsystemBase {
             }
             if (result == VisionFilter.Result.ACCEPT)
                 result = bootstrapPolicy.evaluatePoseJump(cam, est.pose, drivetrain.getState().Pose, bootstrap);
+            SmartDashboard.putNumber("Align/JumpRejects/" + cam,
+                jumpRejects.record(cam, est.timestampSeconds, result));
             SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
             if (!bootstrapPolicy.acceptFrame(cam, result)) continue;
 

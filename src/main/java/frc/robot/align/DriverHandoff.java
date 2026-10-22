@@ -11,6 +11,19 @@ public final class DriverHandoff {
             hold, hold, interrupted -> publish(false), neutral, drive);
     }
 
+    /** An enabled align end arms the next poll, before default command execution. */
+    public static void wireEnd(AlignEndCommand align, edu.wpi.first.wpilibj2.command.Command handoff) {
+        boolean[] ended = {false};
+        align.setEndHandler(() -> ended[0] = edu.wpi.first.wpilibj.DriverStation.isEnabled());
+        new edu.wpi.first.wpilibj2.command.button.Trigger(() -> {
+            if (!edu.wpi.first.wpilibj.DriverStation.isEnabled()) {
+                ended[0] = false;
+                return false;
+            }
+            return ended[0] && !align.isScheduled();
+        }).onTrue(handoff);
+    }
+
     private static void publish(boolean holding) {
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Align/HandoffHoldingZero", holding);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString("Align/HandoffReason",

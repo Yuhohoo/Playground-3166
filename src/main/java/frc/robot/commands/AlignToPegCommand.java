@@ -9,13 +9,12 @@ import com.ctre.phoenix6.swerve.SwerveRequest;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import edu.wpi.first.wpilibj2.command.Command;
 import frc.robot.Constants.AlignConstants;
 import frc.robot.align.FieldLayoutLoader;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 
 /** Hold-to-align to the nearest peg tag. Ends NOT aligned on timeout or lost vision. */
-public class AlignToPegCommand extends Command {
+public class AlignToPegCommand extends frc.robot.align.AlignEndCommand {
     private final CommandSwerveDrivetrain drivetrain;
     /** Newest fresh frame time for a given tag ID (-inf if none). */
     private final IntToDoubleFunction lastVisionTimestamp;
@@ -79,16 +78,12 @@ public class AlignToPegCommand extends Command {
     @Override
     public boolean isFinished() { return controller.isFinished(); }
 
-    private Runnable endHandler = () -> {};
-    /** Schedule the driver handoff for both self-completion and interruption. */
-    public void setEndHandler(Runnable handler) { endHandler = java.util.Objects.requireNonNull(handler); }
-
     @Override
     public void end(boolean interrupted) {
         SmartDashboard.putString("Align/EndReason", interrupted ? "INTERRUPTED" : controller.status().name());
         controller.stop();
         drivetrain.setControl(request.withVelocityX(0).withVelocityY(0).withRotationalRate(0));
-        endHandler.run();
+        super.end(interrupted);
         SmartDashboard.putBoolean("Align/Aligned", false);
     }
 }

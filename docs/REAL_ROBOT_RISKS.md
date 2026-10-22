@@ -50,3 +50,20 @@ running loss still ends POSE_UNTRUSTED with zero output and increments TrustDrop
 Full build/test: **56 tests passed**; separate sim: **4 tests / 20 scenarios passed**.
 Only changed metric: mid-align trust-drop final xy 0.863 -> 0.823 m (drop at 0.84 s).
 All switches remain false, deploy tags empty; no robot validation or deployment.
+
+Current scheduler validation: direct scheduling from align end failed the release
+case by allowing default drive to execute during the handoff. The shared
+DriverHandoff.wireEnd now arms an enabled-only Trigger from the shared
+AlignEndCommand end callback. Its next poll checks !align.isScheduled() before
+scheduling the hold. HAL/real CommandScheduler tests pass release, held-button
+self-completion and disable. Off-center sticks retain the drivetrain with no default
+execution; neutral sticks resume default. Disable starts no handoff and executes no
+drive commands. Physical stopping distance and actual controller inputs still need
+robot validation. Tests clean scheduler registrations/button loops and simulated DS.
+
+Per-camera `Align/JumpRejects/<camera>` dashboard values are running totals of fresh
+jump-rejected exposures, independent of consecutive trust-drop counts. Duplicates
+never increment; accepted frames and trust resets do not erase totals. Use these to
+observe jump frequency during commissioning. Pure counter regression and full build
+pass: 59 tests, zero failures/errors/skips. Pose-trust policy remains unchanged,
+all three switches false, deployment tags empty. No deployment or robot validation.

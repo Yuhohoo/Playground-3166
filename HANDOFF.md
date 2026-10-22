@@ -126,3 +126,32 @@ final xy **0.863 -> 0.823 m**, with trust dropping at 0.84 s instead of 0.80 s.
 All other rows/columns unchanged, zero false alignment/cap violations. No drive/control changes;
 all three switches false, deploy tags empty, synthetic placeholders test-only. Not pushed,
 not deployed, not robot validated.
+
+## Real WPILib scheduler handoff and jump diagnostics (current revision)
+`HandoffSchedulerTest` uses HAL.initialize(500, 0), an enabled blue-alliance
+DriverStationSim, the real CommandScheduler, a boolean Trigger, a stand-in subsystem
+and a default command recording each execution loop. The stand-in align inherits the
+same AlignEndCommand end-handler path as AlignToPegCommand; both use
+DriverHandoff.wireEnd. Each test cancels commands, unregisters subsystems, clears
+button loops and resets DriverStationSim.
+
+Direct end()-scheduling FAILED button release: default drive executed during the
+handoff. Self-completion and disable passed that initial experiment. Production now
+uses an end callback to arm a Trigger gated by !align.isScheduled() and
+DriverStation.isEnabled(). Only an actual enabled align end arms it; disabling
+clears it. On the next scheduler loop the trigger takes the drivetrain before default
+execution. Final cases PASS: release with off-center sticks, self-completion while
+held, and disable with no handoff or drive execution. Both enabled cases verify no
+default execution before neutral sticks and default resumption afterward.
+
+VisionSubsystem publishes lifetime running totals at exactly
+`Align/JumpRejects/<camera>` using each configured Limelight name, initialized to zero.
+JumpRejectCounter is pure and tested: fresh jump rejections increment per camera;
+duplicates do not increment; accepted frames do not reset totals. Existing duplicate
+filtering precedes counting. These totals do not change pose trust or consecutive
+rejection thresholds.
+
+Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test`: **59 tests passed,
+0 failures/errors/skips**, including all three HAL scheduler cases and all 20 closed-loop
+scenarios. Trust logic unchanged. All switches false, deployment tags empty; no
+drive/control/default-command changes. Not robot validated, deployed or pushed.
