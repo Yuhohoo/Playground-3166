@@ -115,8 +115,8 @@ public final class Constants {
          */
         public static final String FIELD_LAYOUT_FILE = "stow_and_seal_tags.json";
 
-        /** PLACEHOLDER - VERIFY: tag IDs next to scoring pegs. Empty = nothing to align to. */
-        public static final int[] PEG_TAG_IDS = {};
+        /** INFERRED from CAD part names, confirm with Limelight on field */
+        public static final int[] PEG_TAG_IDS = {4, 8};
 
         /** PLACEHOLDER - TUNE ON ROBOT: robot-center distance in front of the tag face (m). */
         public static final double OFFSET_DISTANCE_M = 0.6;

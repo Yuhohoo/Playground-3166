@@ -6,7 +6,7 @@ import frc.robot.Constants.VisionConstants;
 public final class VisionFilter {
     private VisionFilter() {}
 
-    public enum Result { ACCEPT, NO_TAGS, SPINNING, STALE, DUPLICATE, INVALID }
+    public enum Result { ACCEPT, UNKNOWN_ID, NO_TAGS, SPINNING, STALE, DUPLICATE, INVALID }
 
     public static Result evaluate(int tagCount, double yawRateDegPerSec, double frameTimestampSec,
             double nowSec, double lastAcceptedTimestampSec, double maxYawRateDegPerSec, double maxAgeSec) {
@@ -22,6 +22,13 @@ public final class VisionFilter {
             double nowSec, double lastAcceptedTimestampSec) {
         return evaluate(tagCount, yawRateDegPerSec, frameTimestampSec, nowSec, lastAcceptedTimestampSec,
             VisionConstants.MAX_YAW_RATE_DEG_PER_SEC, VisionConstants.MAX_FRAME_AGE_SEC);
+    }
+
+    /** All fiducials must belong to the loaded layout; peg selection is independent. */
+    public static Result evaluateIds(int[] ids, int[] layoutIds) {
+        if (ids.length == 0) return Result.NO_TAGS;
+        for (int id : ids) if (!contains(layoutIds, id)) return Result.UNKNOWN_ID;
+        return Result.ACCEPT;
     }
 
     /** Number of {@code ids} that are in {@code allowed}; disallowed IDs never count as tags. */

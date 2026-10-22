@@ -91,14 +91,17 @@ class GatingAndFreshnessTest {
     }
 
     @Test
-    void disallowedIdsNeverCount() {
-        int[] allowed = {3, 4};
-        assertEquals(0, VisionFilter.countAllowed(new int[] {7, 8}, allowed));
-        assertEquals(1, VisionFilter.countAllowed(new int[] {7, 4}, allowed));
-        assertArrayEquals(new int[] {4}, VisionFilter.filterAllowed(new int[] {7, 4}, allowed));
-        assertEquals(0, VisionFilter.countAllowed(new int[] {3}, new int[] {}));
-        assertEquals(VisionFilter.Result.NO_TAGS, VisionFilter.evaluate(
-            VisionFilter.countAllowed(new int[] {7}, allowed), 0, 9.9, 10, 9.0, 720, 0.5));
+    void fusionUsesWholeLayoutAndFreshnessUsesPegs() {
+        int[] layout = {1, 4, 8};
+        assertEquals(VisionFilter.Result.ACCEPT, VisionFilter.evaluateIds(new int[]{1}, layout));
+        assertEquals(VisionFilter.Result.ACCEPT, VisionFilter.evaluateIds(new int[]{1,4}, layout));
+        assertEquals(VisionFilter.Result.UNKNOWN_ID, VisionFilter.evaluateIds(new int[]{4,99}, layout));
+        assertEquals(VisionFilter.Result.UNKNOWN_ID, VisionFilter.evaluateIds(new int[]{99}, layout));
+        assertEquals(VisionFilter.Result.NO_TAGS, VisionFilter.evaluateIds(new int[]{}, layout));
+        assertArrayEquals(new int[]{4}, VisionFilter.filterAllowed(new int[]{1,4}, new int[]{4,8}));
+        assertArrayEquals(new int[]{}, VisionFilter.filterAllowed(new int[]{1}, new int[]{4,8}));
+        assertEquals(VisionFilter.Result.ACCEPT, VisionFilter.evaluateIds(new int[]{4}, layout));
+        assertArrayEquals(new int[]{}, VisionFilter.filterAllowed(new int[]{4}, new int[]{}));
     }
 
     @Test

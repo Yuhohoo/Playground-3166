@@ -1,6 +1,6 @@
 # Hold-to-align feature — HANDOFF
 
-**Status: NOT tested on robot. Only unit-tested (`bash ./gradlew build test` passes). Not deployed.**
+**Status: NOT tested on robot. Unit and headless closed-loop tests pass. Not deployed. All three enable flags remain false.**
 
 ## What was built
 - `vision/VisionFilter` – pure accept/reject (no tags, spin rate, stale, duplicate timestamp, NaN) and std devs `base*(1+d²/k)`.
@@ -25,11 +25,11 @@
 ## Safety gating (added)
 - **Score** (`AlignGating.gatedWhile`): `aligned && pieceHeld` is re-checked every loop for the whole shot; if it drops, the shoot group is cancelled and shooter + indexer are stopped.
 - **Left bumper seed** is ignored while the align command is scheduled.
-- **Vision freshness is per target tag**: `VisionSubsystem.getLastAcceptedTimestampForTag(id)`; only accepted frames whose fiducials include the target tag count. Fiducials not in `PEG_TAG_IDS` are ignored for fusion and freshness (frames with only other IDs = NO_TAGS). NOTE: with `PEG_TAG_IDS` empty, fusion accepts nothing, so fill it before enabling fusion.
+- **Vision freshness is per target tag**: `VisionSubsystem.getLastAcceptedTimestampForTag(id)`; only accepted frames whose fiducials include the target tag count. Fusion accepts fiducials from the entire loaded layout (including non-pegs); any unknown ID rejects the whole frame. `PEG_TAG_IDS` selects align targets and which tag freshness is recorded. Empty peg IDs allow fusion but make alignment finish immediately without a target or nonzero output.
 - Tests: `GatingAndFreshnessTest`, `FieldLayoutLoaderTest`, `AlignVisionTest`.
 
 ## How to enable (all in `Constants`)
-1. `AlignConstants.PEG_TAG_IDS` – fill with real tag IDs (currently empty placeholder; unknown), and fill the JSON above.
+1. `AlignConstants.PEG_TAG_IDS` – currently {4, 8}, INFERRED from CAD part names, confirm with Limelight on field, and fill the JSON above.
 3. `VisionConstants.CAMERA_1/CAMERA_2` – match Limelight hostnames; set camera pose in Limelight UI.
 4. `VisionConstants.FUSION_ENABLED = true` (default false so odometry/autos are unchanged) and `AlignConstants.ALIGN_ENABLED = true`.
 5. Scoring: there is **no beam break sensor** in the code. `RobotContainer` has a TODO with `pieceHeld = () -> false`; add a sensor, wire it, then set `SCORE_BINDING_ENABLED = true`. Score fires `shootCommandGroup()` only if `align.isAligned()` and piece held at the moment of press. No auto-score.
@@ -44,3 +44,13 @@ Align: offsets (`OFFSET_DISTANCE_M`, `OFFSET_LATERAL_M` — verify sign of later
 - Timeout is total time since button press (including after alignment) — the command ends and alignment goes false.
 - Heading for MegaTag2 comes from the fused drivetrain pose rotation; make sure gyro is seeded correctly (left bumper / button 7) before trusting vision.
 - Align/vision dashboard keys: `Align/*`, `Vision/*`.
+
+## Closed-loop validation and changes
+- `align/AlignController` contains the exact profiled PID, per-axis caps, target selection and state machine used by `AlignToPegCommand` and the headless simulation. Start resets controllers using field-relative measured velocity. End/release/loss/timeout explicitly return or send zero; no prior nonzero request is left latched by alignment.
+- `src/test/resources/placeholder_tags.json` contains synthetic 4/8/1 poses; its adjacent README marks PLACEHOLDER / NOT MEASURED. It is test-only. Deployment JSON remains empty.
+- `src/test/java/frc/robot/sim/AlignSimTest.java` runs 50 Hz with deterministic Gaussian noise, 60 ms latency, 8% dropouts, 100-degree FOV, ideal odometry latency compensation and acceleration-limited kinematics. Drive maximums/deadband are read from source without starting CAN. There is no drive slew limiter and align does not inherit manual deadband.
+- Scenarios cover near/far, heading, FOV edge, lateral offset, target loss, release/restart, mixed non-peg and unknown IDs, transient pose jump, total timeout, and hypothetical elevator caps. Scoring before alignment and after target freshness expires is denied through `AlignGating`.
+- No elevator exists in 3166 code. Test-only high/unhomed translation caps do not implement robot functionality.
+- Metrics print to test stdout and `build/sim-results.md`; a checked-in snapshot is in `docs/SIM_RESULTS.md`. The command intentionally reaches total timeout even after converging if the button remains held.
+- Risks and proposed fixes with source citations: `docs/REAL_ROBOT_RISKS.md`. This sim cannot validate traction, CTRE estimation, measured field geometry, gyro mounting or actual camera calibration.
+- Reproduce: `JAVA_HOME=~/jdk17 bash ./gradlew build test`.

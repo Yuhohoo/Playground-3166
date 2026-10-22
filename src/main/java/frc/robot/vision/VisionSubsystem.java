@@ -54,11 +54,13 @@ public class VisionSubsystem extends SubsystemBase {
             LimelightHelpers.SetRobotOrientation(cam, headingDeg, yawRateDegPerSec, 0, 0, 0, 0);
             var est = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2(cam);
             if (est == null) continue;
-            // Only allowed (peg) tag IDs count; frames with only other IDs are NO_TAGS.
+            // Validate the entire frame against the layout before fusing its pose.
             int[] ids = est.rawFiducials == null ? new int[0]
                 : java.util.Arrays.stream(est.rawFiducials).mapToInt(f -> f.id).toArray();
             int[] allowed = VisionFilter.filterAllowed(ids, AlignConstants.PEG_TAG_IDS);
-            var result = VisionFilter.evaluate(allowed.length, yawRateDegPerSec, est.timestampSeconds,
+            var result = VisionFilter.evaluateIds(ids, FieldLayoutLoader.getDeployLayout().orElseThrow()
+                .getTags().stream().mapToInt(t -> t.ID).toArray());
+            if (result == VisionFilter.Result.ACCEPT) result = VisionFilter.evaluate(ids.length, yawRateDegPerSec, est.timestampSeconds,
                 now, lastPerCamera.get(i));
             SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
             if (result != VisionFilter.Result.ACCEPT) continue;
