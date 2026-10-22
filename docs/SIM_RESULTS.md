@@ -1,11 +1,12 @@
-Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test` — **56 tests, 0 failures, 0 errors, 0 skipped**.
-Separate sim rerun: `JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim.AlignSimTest --rerun-tasks` — **4 tests passed; 20 scenarios**.
+Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test` — **64 tests, 0 failures, 0 errors, 0 skipped**.
+Separate sim rerun: `JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim.AlignSimTest --rerun-tasks` — **4 tests passed; 21 scenarios**.
 
 | Scenario | Converge s | Final xy m | Theta deg | Overshoot m | Sign changes | False aligned | End | Cap violations |
 |---|---:|---:|---:|---:|---:|---:|---|---:|
 | auto->teleop short disable | 1.28 | 0.000 | 0.01 | 0.005 | 0 | 0 | TIMED_OUT | 0 |
 | moved while disabled | — | 0.650 | 0.00 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
 | long disable | — | 0.650 | 0.00 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
+| seedFieldCentric mid-match | — | 1.454 | 77.85 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
 | trust drop mid-align | — | 0.823 | 0.01 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
 | near | 1.28 | 0.000 | 0.01 | 0.005 | 0 | 0 | TIMED_OUT | 0 |
 | far | 3.34 | 0.000 | 0.01 | 0.005 | 1 | 0 | TIMED_OUT | 0 |
@@ -79,3 +80,33 @@ its metrics are unchanged. The running trust-drop scenario supplies rejections a
 0.82 and 0.84 s; it ends POSE_UNTRUSTED with zero output on the third rejection.
 Only changed row: `trust drop mid-align`, final xy **0.863 -> 0.823 m**; all other columns
 and the other 19 rows are unchanged. All scenarios retain zero false alignment and cap violations.
+
+
+## Heading-reset detection (current revision)
+`HeadingResetDetector` compares wrapped consecutive fused Pose heading and RawHeading deltas
+from one Phoenix state snapshot per VisionSubsystem loop, including disabled, enable-deferral
+and fusion-inactive loops. First observation only baselines. An absolute delta difference
+strictly greater than HEADING_RESET_THRESHOLD_DEG = 5.0 clears pose trust immediately
+and increments Align/TrustDrops once per true-to-false transition. The threshold is a
+starting guess, not measured, tune on robot. The existing per-cycle align trust check
+then returns zero and ends POSE_UNTRUSTED; a later bootstrap and new press are needed.
+Loops performing our VisionBootstrap reset skip detection entirely and re-baseline from
+post-reset state. Only bootstrap grants trust.
+
+Assumption: THETA_STD_DEV_RAD = 9999999.0 is effectively infinite, so ordinary vision
+fusion cannot materially change heading. Revisit the detector if heading fusion is enabled.
+Small offset changes <=5 degrees per sample, canceling resets between samples, and changes
+before the first baseline can evade detection. Validate actual Phoenix sampling/reset timing
+on robot. No drive/control or RobotContainer binding changes; all three switches false,
+deployment tags empty. Not robot validated, deployed or pushed.
+
+Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test` — **64 tests passed,
+0 failures/errors/skips**. Separate sim rerun with `--tests frc.robot.sim.AlignSimTest
+--rerun-tasks` — **4 tests / 21 scenarios passed**. Five new tests cover seed at 90 degrees
+before and during alignment, small drift/physical turns, bootstrap heading reset skip and
+re-baseline, independent +/-180 crossings, TrustDrops counting and later bootstrap recovery.
+New `seedFieldCentric mid-match` sim starts at 90 degrees, injects pose-heading zero at 0.20 s
+without changing raw physical yaw, and ends POSE_UNTRUSTED with zero output on that cycle.
+Final physical xy 1.454 m, theta 77.85 degrees; all 21 scenarios have zero false alignment
+and cap violations. All 20 prior scenario metrics unchanged. This injects Phoenix's documented
+reset effect; it does not execute JNI or model CTRE estimator dynamics.

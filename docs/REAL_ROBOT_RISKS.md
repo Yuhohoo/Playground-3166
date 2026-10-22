@@ -6,7 +6,7 @@ Not robot validated. All enable flags remain false. References below are reposit
 |---|---|
 | Manual drive is field-centric with operator perspective (`src/main/java/frc/robot/RobotContainer.java:55`); align explicitly requests BlueAlliance (`src/main/java/frc/robot/commands/AlignToPegCommand.java:26`). Switching control may surprise the driver. | Check +field X/+field Y commands on blocks, then at low speed; retain blue-origin poses and explicitly document driver perspective transitions. |
 | Operator perspective changes to 180 degrees for red, while disabled or initially unknown (`src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java:276`). | **Risk 1 fixed in align code:** injected alliance supplier refuses unknown-alliance startup with zero output and not aligned; blue/red sim converge in the same blue-origin frame. Verify both alliances physically; no second vision flip. |
-| Driver can seed field-centric heading (`src/main/java/frc/robot/RobotContainer.java:224`); Pigeon config is null (`src/main/java/frc/robot/generated/TunerConstants.java:76`). Code alone cannot establish mounting sign or absolute heading correctness. | Verify physical CCW produces positive yaw, verify boot heading and seed effects, then validate blue-field translation after seeding. Preserve seed inhibition during alignment. |
+| Driver can seed field-centric heading (`src/main/java/frc/robot/RobotContainer.java:224`); Pigeon config is null (`src/main/java/frc/robot/generated/TunerConstants.java:76`). Code alone cannot establish mounting sign or absolute heading correctness. | Verify physical CCW produces positive yaw, verify boot heading and seed effects, then validate blue-field translation after seeding. Existing bindings remain unchanged; the vision heading-reset detector now clears trust on a sampled heading-offset change over 5 degrees. |
 | No software slew limiter appears in the manual drive request (`src/main/java/frc/robot/RobotContainer.java:119`). Profile constraints in `src/main/java/frc/robot/align/AlignController.java:14` limit setpoints; feedback plus feedforward and final clamps do not guarantee bounded output acceleration. | Measure acceleration/current/traction. Consider a shared vector acceleration limiter with an explicit immediate-stop bypass, after bench validation. Sim physical acceleration is hypothetical 3 m/s² and 10 rad/s². |
 | Manual deadbands are 1.084 m/s and approximately 0.471 rad/s (`src/main/java/frc/robot/RobotContainer.java:57`), larger than some/all align outputs. Align has a separate request without those deadbands (`src/main/java/frc/robot/commands/AlignToPegCommand.java:25`). | Keep the requests independent; regression-test that a future shared request cannot swallow fine correction. Check actual module friction at small outputs. |
 | Default drive owns the drivetrain (`src/main/java/frc/robot/RobotContainer.java:117`); align adds that requirement (`src/main/java/frc/robot/commands/AlignToPegCommand.java:40`). The align end/release handoff now retains drivetrain ownership with zero output until sticks enter the existing manual deadband. | Implemented in the added align binding block using pure DriverHandoff policy; verify scheduler interruption and release at low speed. First-test driver rule: release the stick before releasing the align button. |
@@ -67,3 +67,35 @@ never increment; accepted frames and trust resets do not erase totals. Use these
 observe jump frequency during commissioning. Pure counter regression and full build
 pass: 59 tests, zero failures/errors/skips. Pose-trust policy remains unchanged,
 all three switches false, deployment tags empty. No deployment or robot validation.
+
+
+## Phoenix 26 heading seed finding and detector
+The repository uses Phoenix 6 **26.1.3**. Inspection of its cached `wpiapi-java-26.1.3.jar`
+with `javap -c com.ctre.phoenix6.swerve.SwerveDrivetrain` confirms that
+`seedFieldCentric()` calls `seedFieldCentric(Rotation2d.kZero)`, whose body calls
+`SwerveJNI.JNI_SeedFieldCentric` with the drivetrain ID and angle radians.
+The [CTRE Phoenix 26 Java javadoc](https://api.ctr-electronics.com/phoenix6/stable/java/com/ctre/phoenix6/swerve/SwerveDrivetrain.html#seedFieldCentric())
+specifies that this resets robot pose ROTATION to zero from operator perspective,
+equivalent to `resetRotation(rotation.plus(getOperatorForwardDirection()))` for the overload.
+Translation is unchanged. It does **not** change operator perspective;
+`setOperatorPerspectiveForward` does that. Thus blue zero perspective seeds to field zero;
+red operator forward can seed to 180 degrees. RawHeading is raw gyro yaw without seed offset,
+while Pose is the fused estimate. A seed can invalidate field heading even with no translation
+jump, and before the next align command starts.
+
+The detector compares the two wrapped consecutive heading deltas every vision periodic,
+using the same state snapshot. More than 5 degrees difference clears trust through the existing
+tracker (Align/TrustDrops); a running align ends POSE_UNTRUSTED with zero output that cycle.
+Our own bootstrap reset loops are exempt and re-baseline afterward, including any heading
+change over threshold. First sample only baselines. Threshold comment: starting guess,
+not measured, tune on robot. Vision theta std dev is effectively infinite (9999999 radians),
+so fusion is assumed not to move heading materially. Heading fusion would require revisiting
+this assumption. Subthreshold, between-sample canceling and pre-baseline resets remain undetectable.
+
+On blocks, turn 90 degrees, seed, confirm RawHeading is unchanged and Pose rotation changes,
+Align/PoseTrusted becomes false and Align/TrustDrops advances once. Test seeding before align
+and during running/previously aligned operation, then successful bootstrap and a fresh align
+press. Check +/-180 crossings, physical turns, and bootstrap exemption. Unit tests and the
+21-scenario headless sim verify software behavior only; real Phoenix timing and braking remain
+unvalidated. Build/test: 64 passed; separate sim rerun: 4 tests passed. All switches false,
+deployment tags empty; drive/control and RobotContainer bindings untouched.

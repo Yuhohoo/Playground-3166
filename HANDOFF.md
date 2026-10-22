@@ -155,3 +155,33 @@ Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test`: **59 tests passed,
 0 failures/errors/skips**, including all three HAL scheduler cases and all 20 closed-loop
 scenarios. Trust logic unchanged. All switches false, deployment tags empty; no
 drive/control/default-command changes. Not robot validated, deployed or pushed.
+
+
+## Heading-reset detection (current revision)
+`HeadingResetDetector` compares wrapped consecutive fused Pose heading and RawHeading deltas
+from one Phoenix state snapshot per VisionSubsystem loop, including disabled, enable-deferral
+and fusion-inactive loops. First observation only baselines. An absolute delta difference
+strictly greater than HEADING_RESET_THRESHOLD_DEG = 5.0 clears pose trust immediately
+and increments Align/TrustDrops once per true-to-false transition. The threshold is a
+starting guess, not measured, tune on robot. The existing per-cycle align trust check
+then returns zero and ends POSE_UNTRUSTED; a later bootstrap and new press are needed.
+Loops performing our VisionBootstrap reset skip detection entirely and re-baseline from
+post-reset state. Only bootstrap grants trust.
+
+Assumption: THETA_STD_DEV_RAD = 9999999.0 is effectively infinite, so ordinary vision
+fusion cannot materially change heading. Revisit the detector if heading fusion is enabled.
+Small offset changes <=5 degrees per sample, canceling resets between samples, and changes
+before the first baseline can evade detection. Validate actual Phoenix sampling/reset timing
+on robot. No drive/control or RobotContainer binding changes; all three switches false,
+deployment tags empty. Not robot validated, deployed or pushed.
+
+Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test` — **64 tests passed,
+0 failures/errors/skips**. Separate sim rerun with `--tests frc.robot.sim.AlignSimTest
+--rerun-tasks` — **4 tests / 21 scenarios passed**. Five new tests cover seed at 90 degrees
+before and during alignment, small drift/physical turns, bootstrap heading reset skip and
+re-baseline, independent +/-180 crossings, TrustDrops counting and later bootstrap recovery.
+New `seedFieldCentric mid-match` sim starts at 90 degrees, injects pose-heading zero at 0.20 s
+without changing raw physical yaw, and ends POSE_UNTRUSTED with zero output on that cycle.
+Final physical xy 1.454 m, theta 77.85 degrees; all 21 scenarios have zero false alignment
+and cap violations. All 20 prior scenario metrics unchanged. This injects Phoenix's documented
+reset effect; it does not execute JNI or model CTRE estimator dynamics.

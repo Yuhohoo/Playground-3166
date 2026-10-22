@@ -87,6 +87,8 @@ public final class Constants {
         // starting guess, not measured, tune on robot
         public static final int VISION_TRUST_DROP_FRAMES = 3;
         // starting guess, not measured, tune on robot
+        public static final double HEADING_RESET_THRESHOLD_DEG = 5.0;
+        // starting guess, not measured, tune on robot
         public static final double POSE_TRUST_MAX_DISABLE_S = 5.0;
 
         public static final String CAMERA_1 = "limelight";

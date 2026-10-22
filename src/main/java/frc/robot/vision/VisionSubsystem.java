@@ -22,6 +22,8 @@ public class VisionSubsystem extends SubsystemBase {
     private final TagFreshness tagFreshness = new TagFreshness();
     private java.util.function.BooleanSupplier alignActive = () -> false;
     private final VisionBootstrap bootstrapPolicy;
+    private final HeadingResetDetector headingResetDetector =
+        new HeadingResetDetector(VisionConstants.HEADING_RESET_THRESHOLD_DEG);
 
     private double lastAcceptedTimestamp = Double.NEGATIVE_INFINITY;
 
@@ -69,68 +71,79 @@ public class VisionSubsystem extends SubsystemBase {
 
     @Override
     public void periodic() {
-        boolean ready = bootstrapPolicy.beginLoop();
-        bootstrapPolicy.observeAlign(alignActive.getAsBoolean());
-        publishTrust();
-        // Subsystem periodic precedes trigger polling: defer enable edge for held align triggers.
-        if (!ready) return;
-        if (!VisionConstants.FUSION_ENABLED || !FieldLayoutLoader.isAvailable()) return;
-        var state = drivetrain.getState();
-        double headingDeg = state.Pose.getRotation().getDegrees();
-        double yawRateDegPerSec = Math.toDegrees(state.Speeds.omegaRadiansPerSecond);
-        double now = Timer.getFPGATimestamp();
+        var headingState = drivetrain.getState();
+        boolean resetThisLoop = false;
+        try {
+            boolean ready = bootstrapPolicy.beginLoop();
+            bootstrapPolicy.observeAlign(alignActive.getAsBoolean());
+            publishTrust();
+            // Subsystem periodic precedes trigger polling: defer enable edge for held align triggers.
+            if (!ready) return;
+            if (!VisionConstants.FUSION_ENABLED || !FieldLayoutLoader.isAvailable()) return;
+            var state = drivetrain.getState();
+            double headingDeg = state.Pose.getRotation().getDegrees();
+            double yawRateDegPerSec = Math.toDegrees(state.Speeds.omegaRadiansPerSecond);
+            double now = Timer.getFPGATimestamp();
 
-        for (int i = 0; i < cameras.size(); i++) {
-            String cam = cameras.get(i);
-            LimelightHelpers.SetRobotOrientation(cam, headingDeg, yawRateDegPerSec, 0, 0, 0, 0);
-            var est = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2(cam);
-            if (est == null) { bootstrapPolicy.rejectFrame(cam); continue; }
-            // Ignore repeated exposures before any other validation or stability mutation.
-            if (!bootstrapPolicy.acceptFrame(cam, est.timestampSeconds == lastPerCamera.get(i)
-                    ? VisionFilter.Result.DUPLICATE : VisionFilter.Result.ACCEPT)) continue;
-            // Validate the entire frame against the layout before fusing its pose.
-            int[] ids = est.rawFiducials == null ? new int[0]
-                : java.util.Arrays.stream(est.rawFiducials).mapToInt(f -> f.id).toArray();
-            int[] allowed = VisionFilter.filterAllowed(ids, AlignConstants.PEG_TAG_IDS);
-            int[] layoutIds = FieldLayoutLoader.getDeployLayout().orElseThrow()
-                .getTags().stream().mapToInt(t -> t.ID).toArray();
-            var result = VisionFilter.evaluateIds(ids, layoutIds);
-            if (result == VisionFilter.Result.ACCEPT) result = VisionFilter.evaluate(ids.length, yawRateDegPerSec, est.timestampSeconds,
-                now, lastPerCamera.get(i));
-            if (!bootstrapPolicy.acceptFrame(cam, result)) continue;
-            // Consume each exposure once, including bootstrap candidates outside the jump gate.
-            lastPerCamera.set(i, est.timestampSeconds);
-            boolean bootstrap = bootstrapPolicy.shouldReset(cam, alignActive.getAsBoolean(), ids, layoutIds,
-                ids.length == 1 ? est.rawFiducials[0].distToCamera : Double.NaN,
-                ids.length == 1 ? est.rawFiducials[0].ambiguity : Double.NaN, est.pose);
-            if (!bootstrap && bootstrapPolicy.isCollectingSingleTag(cam)) {
-                SmartDashboard.putString("Vision/" + cam + "/Result", "STABILIZING");
-                continue;
-            }
-            if (result == VisionFilter.Result.ACCEPT)
-                result = bootstrapPolicy.evaluatePoseJump(cam, est.pose, drivetrain.getState().Pose, bootstrap);
-            SmartDashboard.putNumber("Align/JumpRejects/" + cam,
-                jumpRejects.record(cam, est.timestampSeconds, result));
-            SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
-            if (!bootstrapPolicy.acceptFrame(cam, result)) continue;
+            for (int i = 0; i < cameras.size(); i++) {
+                String cam = cameras.get(i);
+                LimelightHelpers.SetRobotOrientation(cam, headingDeg, yawRateDegPerSec, 0, 0, 0, 0);
+                var est = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2(cam);
+                if (est == null) { bootstrapPolicy.rejectFrame(cam); continue; }
+                // Ignore repeated exposures before any other validation or stability mutation.
+                if (!bootstrapPolicy.acceptFrame(cam, est.timestampSeconds == lastPerCamera.get(i)
+                        ? VisionFilter.Result.DUPLICATE : VisionFilter.Result.ACCEPT)) continue;
+                // Validate the entire frame against the layout before fusing its pose.
+                int[] ids = est.rawFiducials == null ? new int[0]
+                    : java.util.Arrays.stream(est.rawFiducials).mapToInt(f -> f.id).toArray();
+                int[] allowed = VisionFilter.filterAllowed(ids, AlignConstants.PEG_TAG_IDS);
+                int[] layoutIds = FieldLayoutLoader.getDeployLayout().orElseThrow()
+                    .getTags().stream().mapToInt(t -> t.ID).toArray();
+                var result = VisionFilter.evaluateIds(ids, layoutIds);
+                if (result == VisionFilter.Result.ACCEPT) result = VisionFilter.evaluate(ids.length, yawRateDegPerSec, est.timestampSeconds,
+                    now, lastPerCamera.get(i));
+                if (!bootstrapPolicy.acceptFrame(cam, result)) continue;
+                // Consume each exposure once, including bootstrap candidates outside the jump gate.
+                lastPerCamera.set(i, est.timestampSeconds);
+                boolean bootstrap = bootstrapPolicy.shouldReset(cam, alignActive.getAsBoolean(), ids, layoutIds,
+                    ids.length == 1 ? est.rawFiducials[0].distToCamera : Double.NaN,
+                    ids.length == 1 ? est.rawFiducials[0].ambiguity : Double.NaN, est.pose);
+                if (!bootstrap && bootstrapPolicy.isCollectingSingleTag(cam)) {
+                    SmartDashboard.putString("Vision/" + cam + "/Result", "STABILIZING");
+                    continue;
+                }
+                if (result == VisionFilter.Result.ACCEPT)
+                    result = bootstrapPolicy.evaluatePoseJump(cam, est.pose, drivetrain.getState().Pose, bootstrap);
+                SmartDashboard.putNumber("Align/JumpRejects/" + cam,
+                    jumpRejects.record(cam, est.timestampSeconds, result));
+                SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
+                if (!bootstrapPolicy.acceptFrame(cam, result)) continue;
 
-            double[] sd = VisionFilter.stdDevs(est.avgTagDist);
-            // Drivetrain override applies Utils.fpgaToCurrentTime; pass the raw FPGA timestamp.
-            if (bootstrap) {
-                // Initialize translation, retaining the authoritative gyro heading.
-                drivetrain.resetPose(new edu.wpi.first.math.geometry.Pose2d(
-                    est.pose.getTranslation(), drivetrain.getState().Pose.getRotation()));
-                bootstrapPolicy.didReset();
-            } else {
-                drivetrain.addVisionMeasurement(est.pose, est.timestampSeconds,
-                    VecBuilder.fill(sd[0], sd[1], sd[2]));
-                bootstrapPolicy.didFuse(cam);
+                double[] sd = VisionFilter.stdDevs(est.avgTagDist);
+                // Drivetrain override applies Utils.fpgaToCurrentTime; pass the raw FPGA timestamp.
+                if (bootstrap) {
+                    // Initialize translation, retaining the authoritative gyro heading.
+                    drivetrain.resetPose(new edu.wpi.first.math.geometry.Pose2d(
+                        est.pose.getTranslation(), drivetrain.getState().Pose.getRotation()));
+                    bootstrapPolicy.didReset();
+                    resetThisLoop = true;
+                } else {
+                    drivetrain.addVisionMeasurement(est.pose, est.timestampSeconds,
+                        VecBuilder.fill(sd[0], sd[1], sd[2]));
+                    bootstrapPolicy.didFuse(cam);
+                }
+                lastPerCamera.set(i, est.timestampSeconds);
+                tagFreshness.record(allowed, est.timestampSeconds);
+                lastAcceptedTimestamp = Math.max(lastAcceptedTimestamp, est.timestampSeconds);
             }
-            lastPerCamera.set(i, est.timestampSeconds);
-            tagFreshness.record(allowed, est.timestampSeconds);
-            lastAcceptedTimestamp = Math.max(lastAcceptedTimestamp, est.timestampSeconds);
+            SmartDashboard.putNumber("Vision/LastAcceptedAgeSec", now - lastAcceptedTimestamp);
+        } finally {
+            // Compare one coherent Phoenix snapshot, including loops with no camera processing.
+            // Our reset is exempt; sample again afterward to re-baseline its new heading offset.
+            var baseline = resetThisLoop ? drivetrain.getState() : headingState;
+            if (headingResetDetector.update(baseline.Pose.getRotation().getDegrees(),
+                    baseline.RawHeading.getDegrees(), resetThisLoop)) bootstrapPolicy.clearPoseTrust();
+            publishTrust();
         }
-        publishTrust();
-        SmartDashboard.putNumber("Vision/LastAcceptedAgeSec", now - lastAcceptedTimestamp);
     }
 }

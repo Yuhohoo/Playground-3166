@@ -92,6 +92,7 @@ class AlignSimTest {
             new Scenario("auto->teleop short disable", .65, 0, 0, "short-disable", 1),
             new Scenario("moved while disabled", .65, 0, 0, "moved-disable", 1),
             new Scenario("long disable", .65, 0, 0, "long-disable", 1),
+            new Scenario("seedFieldCentric mid-match", 1.5, 0, 90, "seed", 1),
             new Scenario("trust drop mid-align", 1.5, 0, 0, "trust-drop", 1),
             new Scenario("near", .65, 0, 0, "none", 1),
             new Scenario("far", 2.7, 0, 0, "none", 1),
@@ -144,6 +145,8 @@ class AlignSimTest {
                 assertFalse(trust.isPoseTrusted());
             }
         }
+        var headingDetector = new frc.robot.vision.HeadingResetDetector(
+            frc.robot.Constants.VisionConstants.HEADING_RESET_THRESHOLD_DEG);
         var controller = new AlignController(() -> s.event.equals("unknown") ? Optional.empty()
             : Optional.of(s.event.equals("red") ? edu.wpi.first.wpilibj.DriverStation.Alliance.Red
                 : edu.wpi.first.wpilibj.DriverStation.Alliance.Blue),
@@ -218,7 +221,22 @@ class AlignSimTest {
                 assertEquals(i == 42 ? 1 : 0, trust.getTrustDrops());
                 if (i == 42) assertFalse(controller.isAligned(now));
             }
+            if (s.event.equals("seed")) {
+                // Raw gyro follows physical yaw; seed changes only the fused pose offset.
+                if (i == 10) estimated = new Pose2d(estimated.getTranslation(), Rotation2d.kZero);
+                if (headingDetector.update(estimated.getRotation().getDegrees(),
+                        robot.pose.getRotation().getDegrees(), false)) trust.clearPoseTrust();
+            }
             var output = controller.update(now, estimated, freshness::get);
+            if (s.event.equals("seed") && i >= 10) {
+                assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
+                assertTrue(controller.isFinished());
+                assertFalse(controller.isAligned(now));
+                assertEquals(1, trust.getTrustDrops());
+                assertEquals(0, output.vxMetersPerSecond);
+                assertEquals(0, output.vyMetersPerSecond);
+                assertEquals(0, output.omegaRadiansPerSecond);
+            }
             if (s.event.equals("trust-drop") && i>=42) {
                 assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
                 assertTrue(controller.isFinished());
@@ -274,7 +292,7 @@ class AlignSimTest {
             if (s.event.equals("long-disable") || s.event.equals("moved-disable")) assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
             assertFalse(sawAligned);
             assertEquals(Math.hypot(s.distance, s.side), xy, 1e-9);
-        } else if (s.event.equals("trust-drop")) {
+        } else if (s.event.equals("trust-drop") || s.event.equals("seed")) {
             assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
             assertFalse(sawAligned);
         } else if (s.event.equals("reset")) {
