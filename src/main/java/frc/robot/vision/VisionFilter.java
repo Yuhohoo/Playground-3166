@@ -32,9 +32,25 @@ public final class VisionFilter {
         return distance > VisionConstants.VISION_MAX_POSE_JUMP_M ? Result.POSE_JUMP : Result.ACCEPT;
     }
 
+    /** During alignment, eligible frames use the normal jump gate and never reset pose. */
+    public static boolean shouldBootstrap(boolean bootstrapped, boolean alignActive, int[] ids, int[] layoutIds) {
+        return !alignActive && shouldBootstrap(bootstrapped, ids, layoutIds);
+    }
+
     public static boolean shouldBootstrap(boolean bootstrapped, int[] ids, int[] layoutIds) {
         return !bootstrapped && evaluateIds(ids, layoutIds) == Result.ACCEPT
             && java.util.Arrays.stream(ids).distinct().count() >= 2;
+    }
+
+    /** Scheduled alignment always uses the normal jump gate, even on the first enable frame. */
+    public static boolean shouldBootstrap(boolean bootstrapped, boolean alignActive, int[] ids,
+            int[] layoutIds, double singleDistance, double singleAmbiguity) {
+        if (bootstrapped || alignActive || evaluateIds(ids, layoutIds) != Result.ACCEPT) return false;
+        if (java.util.Arrays.stream(ids).distinct().count() >= 2) return true;
+        return ids.length == 1 && Double.isFinite(singleDistance) && singleDistance >= 0
+            && singleDistance < VisionConstants.VISION_SINGLE_TAG_RESET_MAX_DIST_M
+            && Double.isFinite(singleAmbiguity) && singleAmbiguity >= 0
+            && singleAmbiguity < VisionConstants.VISION_SINGLE_TAG_MAX_AMBIGUITY;
     }
 
     public static Result evaluatePoseJump(edu.wpi.first.math.geometry.Pose2d measured,

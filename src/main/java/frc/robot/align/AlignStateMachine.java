@@ -2,7 +2,7 @@ package frc.robot.align;
 
 /** Pure alignment counter / timeout / lost-target logic with injected timestamps. */
 public class AlignStateMachine {
-    public enum Status { RUNNING, TIMED_OUT, LOST_TARGET }
+    public enum Status { RUNNING, TIMED_OUT, LOST_TARGET, POSE_RESET }
 
     private final double timeoutSec;
     private final double lostTargetSec;
@@ -54,6 +54,12 @@ public class AlignStateMachine {
     /** True only if running, in tolerance for N loops, and vision is still fresh at {@code now}. */
     public boolean isAligned(double now) {
         return aligned && status == Status.RUNNING && isFresh(now);
+    }
+
+    public void poseReset() {
+        status = Status.POSE_RESET;
+        aligned = false;
+        consecutive = 0;
     }
 
     public Status getStatus() { return status; }

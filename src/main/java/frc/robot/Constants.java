@@ -94,6 +94,10 @@ public final class Constants {
         public static final double MAX_FRAME_AGE_SEC = 0.5;
         /** starting guess, not measured, tune on robot */
         public static final double VISION_MAX_POSE_JUMP_M = 0.5;
+        /** starting guess, not measured, tune on robot */
+        public static final double VISION_SINGLE_TAG_RESET_MAX_DIST_M = 2.0;
+        /** starting guess, not measured, tune on robot */
+        public static final double VISION_SINGLE_TAG_MAX_AMBIGUITY = 0.2;
         /** PLACEHOLDER - TUNE ON ROBOT: base xy std dev (m) at zero distance. */
         public static final double BASE_XY_STD_DEV_M = 0.5;
         /** PLACEHOLDER - TUNE ON ROBOT: distance (m^2) scale; std = base * (1 + d^2 / k). */
@@ -128,6 +132,10 @@ public final class Constants {
         // PLACEHOLDER - TUNE ON ROBOT: gains, caps, tolerances
         public static final double XY_KP = 2.0, XY_KI = 0.0, XY_KD = 0.0;
         public static final double THETA_KP = 3.0, THETA_KI = 0.0, THETA_KD = 0.0;
+        /** starting guess, not measured, tune on robot */
+        public static final double POSE_DISCONTINUITY_M = 0.5;
+        /** starting guess, not measured, tune on robot; heading-only resets also abort. */
+        public static final double POSE_DISCONTINUITY_RAD = Math.toRadians(20);
         public static final double MAX_SPEED_MPS = 1.0;
         public static final double MAX_ACCEL_MPS2 = 1.5;
         public static final double MAX_ANGULAR_RAD_PER_SEC = Math.PI;

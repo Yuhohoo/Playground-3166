@@ -19,8 +19,9 @@ public class VisionSubsystem extends SubsystemBase {
     private final List<String> cameras = new ArrayList<>();
     private final List<Double> lastPerCamera = new ArrayList<>();
     private final TagFreshness tagFreshness = new TagFreshness();
-    private boolean bootstrapped;
-    private boolean wasEnabled;
+    private java.util.function.BooleanSupplier alignActive = () -> false;
+    private final VisionBootstrap bootstrapPolicy = new VisionBootstrap();
+
     private double lastAcceptedTimestamp = Double.NEGATIVE_INFINITY;
 
     public VisionSubsystem(CommandSwerveDrivetrain drivetrain) {
@@ -31,6 +32,11 @@ public class VisionSubsystem extends SubsystemBase {
                 lastPerCamera.add(Double.NEGATIVE_INFINITY);
             }
         }
+    }
+
+    /** Injected from the align command scheduling state; defaults inactive when no align binding exists. */
+    public void setAlignActiveSupplier(java.util.function.BooleanSupplier alignActive) {
+        this.alignActive = java.util.Objects.requireNonNull(alignActive);
     }
 
     /** FPGA timestamp (s) of the newest accepted frame from any camera; -inf if none. */
@@ -46,8 +52,8 @@ public class VisionSubsystem extends SubsystemBase {
     @Override
     public void periodic() {
         boolean enabled = edu.wpi.first.wpilibj.DriverStation.isEnabled();
-        if (enabled && !wasEnabled) bootstrapped = false;
-        wasEnabled = enabled;
+        // Subsystem periodic precedes trigger polling: defer enable edge for held align triggers.
+        if (!bootstrapPolicy.beginLoop(enabled)) return;
         if (!enabled || !VisionConstants.FUSION_ENABLED || !FieldLayoutLoader.isAvailable()) return;
         var state = drivetrain.getState();
         double headingDeg = state.Pose.getRotation().getDegrees();
@@ -68,7 +74,9 @@ public class VisionSubsystem extends SubsystemBase {
             var result = VisionFilter.evaluateIds(ids, layoutIds);
             if (result == VisionFilter.Result.ACCEPT) result = VisionFilter.evaluate(ids.length, yawRateDegPerSec, est.timestampSeconds,
                 now, lastPerCamera.get(i));
-            boolean bootstrap = VisionFilter.shouldBootstrap(bootstrapped, ids, layoutIds);
+            boolean bootstrap = bootstrapPolicy.shouldReset(alignActive.getAsBoolean(), ids, layoutIds,
+                ids.length == 1 ? est.rawFiducials[0].distToCamera : Double.NaN,
+                ids.length == 1 ? est.rawFiducials[0].ambiguity : Double.NaN);
             if (result == VisionFilter.Result.ACCEPT)
                 result = VisionFilter.evaluatePoseJump(est.pose, drivetrain.getState().Pose, bootstrap);
             SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
@@ -80,7 +88,7 @@ public class VisionSubsystem extends SubsystemBase {
                 // Initialize translation, retaining the authoritative gyro heading.
                 drivetrain.resetPose(new edu.wpi.first.math.geometry.Pose2d(
                     est.pose.getTranslation(), drivetrain.getState().Pose.getRotation()));
-                bootstrapped = true;
+                bootstrapPolicy.didReset();
             } else {
                 drivetrain.addVisionMeasurement(est.pose, est.timestampSeconds,
                     VecBuilder.fill(sd[0], sd[1], sd[2]));

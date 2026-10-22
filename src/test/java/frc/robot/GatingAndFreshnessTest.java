@@ -91,6 +91,43 @@ class GatingAndFreshnessTest {
     }
 
     @Test
+    void triggerHeldAtEnableCannotBootstrapBeforeScheduling() {
+        var scheduler = CommandScheduler.getInstance();
+        var held = new AtomicBoolean(false);
+        Command align = Commands.run(() -> {});
+        var policy = new frc.robot.vision.VisionBootstrap();
+        var resets = new AtomicInteger();
+        var vision = new edu.wpi.first.wpilibj2.command.SubsystemBase() {
+            @Override public void periodic() {
+                if (policy.beginLoop(edu.wpi.first.wpilibj.DriverStation.isEnabled())
+                        && policy.shouldReset(align.isScheduled(), new int[]{4,8}, new int[]{4,8}, 1, .1)) {
+                    resets.incrementAndGet();
+                    policy.didReset();
+                }
+            }
+        };
+        try {
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.setEnabled(false);
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.notifyNewData();
+            new Trigger(held::get).whileTrue(align);
+            scheduler.run();
+            held.set(true);
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.setEnabled(true);
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.notifyNewData();
+            scheduler.run(); // periodic precedes trigger poll: enable edge must be deferred.
+            assertTrue(align.isScheduled());
+            for (int i=0; i<5; i++) scheduler.run();
+            assertEquals(0, resets.get());
+            held.set(false);
+            scheduler.run();
+            scheduler.run();
+            assertEquals(1, resets.get()); // Pending bootstrap succeeds only after release.
+        } finally {
+            scheduler.unregisterSubsystem(vision);
+        }
+    }
+
+    @Test
     void fusionUsesWholeLayoutAndFreshnessUsesPegs() {
         int[] layout = {1, 4, 8};
         assertEquals(VisionFilter.Result.ACCEPT, VisionFilter.evaluateIds(new int[]{1}, layout));

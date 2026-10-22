@@ -91,6 +91,7 @@ class AlignSimTest {
             new Scenario("lost halfway", 2.7, 0, 0, "lost", 1),
             new Scenario("release/restart", 2.7, 0, 0, "release", 1),
             new Scenario("non-peg + unknown", 1.5, 0, 0, "mixed", 1),
+            new Scenario("forced pose reset", 1.5, 0, 0, "reset", 1),
             new Scenario("pose jump", 1.5, 0, 0, "jump", 1),
             new Scenario("timeout", 8, 0, 0, "timeout", 1),
             new Scenario("hypothetical high", .65, 0, 0, "none", .5),
@@ -138,7 +139,7 @@ class AlignSimTest {
             while (!pending.isEmpty() && pending.peek().delivery <= now+1e-9) {
                 var frame = pending.remove();
                 var valid = VisionFilter.evaluateIds(frame.ids, layoutIds);
-                boolean bootstrap = VisionFilter.shouldBootstrap(bootstrapped, frame.ids, layoutIds);
+                boolean bootstrap = VisionFilter.shouldBootstrap(bootstrapped, !controller.isFinished(), frame.ids, layoutIds);
                 if (valid == VisionFilter.Result.ACCEPT) {
                     valid = VisionFilter.evaluatePoseJump(frame.pose, estimated, bootstrap);
                     if (valid == VisionFilter.Result.POSE_JUMP) jumpRejected = true;
@@ -170,7 +171,18 @@ class AlignSimTest {
                 controller.start(now, robot.pose, robot.speed, tags, AlignConstants.PEG_TAG_IDS);
                 assertFalse(controller.isAligned(now)); restarted = true;
             }
+            // External reset changes only estimation, not the physical robot pose.
+            if (s.event.equals("reset") && i==40)
+                estimated = new Pose2d(estimated.getX()+2, estimated.getY(), estimated.getRotation());
             var output = controller.update(now, estimated, freshness::get);
+            if (s.event.equals("reset") && i>=40) {
+                assertEquals(AlignStateMachine.Status.POSE_RESET, controller.status());
+                assertTrue(controller.isFinished());
+                assertFalse(controller.isAligned(now));
+                assertEquals(0, output.vxMetersPerSecond);
+                assertEquals(0, output.vyMetersPerSecond);
+                assertEquals(0, output.omegaRadiansPerSecond);
+            }
             if (lost && now-freshness.get(4) > AlignConstants.LOST_TARGET_SEC) {
                 assertEquals(0, output.vxMetersPerSecond); assertEquals(0, output.vyMetersPerSecond);
                 assertEquals(0, output.omegaRadiansPerSecond);
@@ -209,6 +221,9 @@ class AlignSimTest {
         if (s.event.equals("unknown")) {
             assertFalse(sawAligned);
             assertEquals(Math.hypot(s.distance, s.side), xy, 1e-9);
+        } else if (s.event.equals("reset")) {
+            assertEquals(AlignStateMachine.Status.POSE_RESET, controller.status());
+            assertFalse(sawAligned);
         } else if (s.event.equals("lost")) {
             assertEquals(AlignStateMachine.Status.LOST_TARGET, controller.status());
             assertTrue(stoppedAt <= 1.52); assertFalse(sawAligned);
