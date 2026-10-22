@@ -1,5 +1,5 @@
-Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test` — **39 tests, 0 failures, 0 errors, 0 skipped**.
-Separate sim rerun: `JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim.AlignSimTest --rerun-tasks` — **4 tests passed; 15 scenarios**.
+Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test` — **43 tests, 0 failures, 0 errors, 0 skipped**.
+Separate sim rerun: `JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim.AlignSimTest --rerun-tasks` — **4 tests passed; 16 scenarios**.
 
 | Scenario | Converge s | Final xy m | Theta deg | Overshoot m | Sign changes | False aligned | End | Cap violations |
 |---|---:|---:|---:|---:|---:|---:|---|---:|
@@ -8,6 +8,7 @@ Separate sim rerun: `JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim
 | heading 45deg | 2.04 | 0.000 | 0.01 | 0.005 | 1 | 0 | TIMED_OUT | 0 |
 | FOV edge | 2.04 | 0.000 | 0.01 | 0.005 | 1 | 0 | TIMED_OUT | 0 |
 | red alliance | 2.92 | 0.000 | 0.01 | 0.000 | 0 | 0 | TIMED_OUT | 0 |
+| untrusted pose | — | 1.803 | 0.00 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
 | unknown alliance | — | 1.803 | 0.00 | 0.000 | 0 | 0 | REFUSED | 0 |
 | side | 2.92 | 0.000 | 0.01 | 0.000 | 0 | 0 | TIMED_OUT | 0 |
 | lost halfway | — | 1.363 | 0.04 | 0.000 | 0 | 0 | LOST_TARGET | 0 |
@@ -19,8 +20,10 @@ Separate sim rerun: `JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim
 | hypothetical high | 2.06 | 0.000 | 0.01 | 0.000 | 0 | 0 | TIMED_OUT | 0 |
 | hypothetical unhomed | 2.12 | 0.000 | 0.01 | 0.000 | 0 | 0 | TIMED_OUT | 0 |
 
-Changes vs 3f15fcf: all 14 shared scenario metrics are unchanged. Added forced pose reset at 0.80 s: estimation shifts +2 m without moving the physical robot; controller immediately returns zero on every axis, latches POSE_RESET, finishes NOT aligned and never chases the shifted estimate. Physical stopping leaves 0.863 m error in this idealized model. All 15 scenarios have zero false-aligned events and zero cap violations. TIMED_OUT after convergence is expected when held through the total timeout.
+Changes vs bb67c3f: all 15 shared scenario metrics are unchanged. Added **untrusted pose**: startup refuses with POSE_UNTRUSTED, every output remains zero, and alignment stays false. All 16 scenarios have zero false-aligned events and zero cap violations. TIMED_OUT after convergence is expected when held through total timeout. Existing controller scenarios explicitly bootstrap a pure trust policy before starting; the untrusted scenario supplies false throughout.
 
-Bootstrap now requires align not scheduled and all IDs in the layout. Two distinct tags qualify, or one tag with RawFiducial distToCamera < 2.0 m and ambiguity < 0.2. During alignment eligible frames use the normal jump gate/fusion without reset and leave bootstrap pending. Regression coverage includes close/confident acceptance, distance/ambiguity boundary rejection, unknown IDs and scheduled inhibition. A real CommandScheduler test exercises subsystem periodic before trigger polling with trigger held through enable: first enabled periodic is deferred; no reset occurs while scheduled; pending bootstrap becomes eligible after release.
+Single-tag bootstrap now requires five consecutive validated same-ID exposures whose maximum pairwise translation distance is <= 0.05 m, in addition to distance < 2.0 m and ambiguity < 0.2. These are starting guesses, not measured, tune on robot. Pending candidates are withheld from fusion until stable. ID changes, rejected frames (including duplicates), disable/enable, and scheduled align clear the window. Each exposure is consumed once, including pending candidates. An unstable rolling window cannot reset; five subsequent consistent readings can. Two distinct known tags may still bootstrap immediately while align is not scheduled. Scheduled alignment never resets or bypasses the normal jump gate.
 
-Controller tests cover translation and heading-only resets during motion and after alignment, persistent zero output, cleared alignment and unchanged target. Release handoff tests verify drivetrain ownership and dashboard hold/reason clearing. The camera sim uses production pure filtering and idealized odometry/latency compensation; it does not model CTRE estimation/reset dynamics or real camera ambiguity. The release/restart scenario models controller stop/restart, not physical joystick dynamics. All tuning margins are starting guesses, not measured, tune on robot. Robot validation remains required; flags stay false and deployment tags stay empty.
+Trust is false at boot and on each disabled-to-enabled transition, and becomes true only after successful reset. Gate-passing fusion before bootstrap does not grant trust. The first enabled periodic still defers processing for trigger scheduling. AlignController uses an injected trust supplier and refuses startup with POSE_UNTRUSTED; VisionSubsystem publishes Align/PoseTrusted. Tests cover stable/unstable readings, ID/rejection/align window clearing, bootstrap-dependent alignment, and injected re-enable transitions, alongside existing jump-gate and held-trigger scheduler coverage.
+
+The camera sim uses production pure filtering with ideal odometry/latency compensation; it does not model CTRE estimator/reset dynamics or real camera ambiguity. Single-tag stability and enable transitions are tested separately in pure regression tests. Release/restart models controller stop/restart, not physical joystick dynamics. Robot validation remains required; switches stay false and deployment tags stay empty.

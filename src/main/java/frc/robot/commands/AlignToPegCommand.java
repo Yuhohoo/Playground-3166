@@ -27,13 +27,15 @@ public class AlignToPegCommand extends Command {
 
     private final frc.robot.align.AlignController controller;
 
-    public AlignToPegCommand(CommandSwerveDrivetrain drivetrain, IntToDoubleFunction lastVisionTimestamp) {
-        this(drivetrain, lastVisionTimestamp, edu.wpi.first.wpilibj.DriverStation::getAlliance);
+    public AlignToPegCommand(CommandSwerveDrivetrain drivetrain, IntToDoubleFunction lastVisionTimestamp,
+            java.util.function.BooleanSupplier poseTrusted) {
+        this(drivetrain, lastVisionTimestamp, poseTrusted, edu.wpi.first.wpilibj.DriverStation::getAlliance);
     }
 
     public AlignToPegCommand(CommandSwerveDrivetrain drivetrain, IntToDoubleFunction lastVisionTimestamp,
+            java.util.function.BooleanSupplier poseTrusted,
             java.util.function.Supplier<java.util.Optional<edu.wpi.first.wpilibj.DriverStation.Alliance>> alliance) {
-        controller = new frc.robot.align.AlignController(alliance);
+        controller = new frc.robot.align.AlignController(alliance, poseTrusted);
         this.drivetrain = drivetrain;
         this.lastVisionTimestamp = lastVisionTimestamp;
         if (AlignConstants.ALIGN_ENABLED) {

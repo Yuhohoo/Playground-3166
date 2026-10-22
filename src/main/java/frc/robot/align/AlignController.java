@@ -35,8 +35,13 @@ public final class AlignController {
     private int targetId = -1;
     private boolean active;
     private final Supplier<Optional<Alliance>> alliance;
-    public AlignController() { this(DriverStation::getAlliance); }
+    private final java.util.function.BooleanSupplier poseTrusted;
+    public AlignController() { this(DriverStation::getAlliance, () -> false); }
     public AlignController(Supplier<Optional<Alliance>> alliance) {
+        this(alliance, () -> false);
+    }
+    public AlignController(Supplier<Optional<Alliance>> alliance, java.util.function.BooleanSupplier poseTrusted) {
+        this.poseTrusted = poseTrusted;
         this.alliance = alliance;
         thetaPID.enableContinuousInput(-Math.PI, Math.PI);
         xPID.setTolerance(AlignConstants.XY_TOLERANCE_M);
@@ -46,6 +51,7 @@ public final class AlignController {
     public void start(double now, Pose2d pose, ChassisSpeeds fieldSpeeds,
             Map<Integer, Pose2d> tags, int[] pegIds) {
         stop();
+        if (!poseTrusted.getAsBoolean()) { machine.poseUntrusted(); return; }
         // Alliance is a start gate only; all poses and outputs remain blue-origin.
         if (alliance.get().isEmpty()) return;
         machine.start(now);

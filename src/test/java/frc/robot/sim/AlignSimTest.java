@@ -14,6 +14,14 @@ import frc.robot.commands.AlignGating;
 import edu.wpi.first.wpilibj2.command.Commands;
 
 class AlignSimTest {
+    private static java.util.function.BooleanSupplier trustedPose() {
+        var policy = new frc.robot.vision.VisionBootstrap();
+        if (!policy.shouldReset(false, new int[]{4,8}, new int[]{4,8}, 1, .1,
+                new Pose2d())) throw new AssertionError("bootstrap rejected");
+        policy.didReset();
+        return policy::isPoseTrusted;
+    }
+
     private final Map<Integer, Pose2d> tags = new HashMap<>();
     private final int[] layoutIds;
     AlignSimTest() throws Exception {
@@ -31,7 +39,7 @@ class AlignSimTest {
         assertEquals(0, shots[0], "unsafe scoring");
     }
     @Test void diagonalCapPreservesDirection() {
-        var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
+        var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue), trustedPose());
         var target = AlignMath.targetPose(tags.get(4), AlignConstants.OFFSET_DISTANCE_M, 0);
         var pose = new Pose2d(target.getX()-3, target.getY()-3, target.getRotation());
         controller.start(0, pose, new ChassisSpeeds(), tags, new int[]{4});
@@ -48,7 +56,7 @@ class AlignSimTest {
     }
 
     @Test void emptyPegSelectionEndsWithoutOutput() {
-        var controller = new AlignController(() -> java.util.Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
+        var controller = new AlignController(() -> java.util.Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue), trustedPose());
         controller.start(0, new Pose2d(), new ChassisSpeeds(), tags, new int[0]);
         assertNull(controller.target()); assertEquals(-1, controller.targetId());
         assertTrue(controller.isFinished()); assertFalse(controller.isAligned(0));
@@ -59,7 +67,7 @@ class AlignSimTest {
     }
     @Test void scoreAfterAlignmentButLostTargetNeverShoots() {
         edu.wpi.first.hal.HAL.initialize(500, 0);
-        var controller = new AlignController(() -> java.util.Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
+        var controller = new AlignController(() -> java.util.Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue), trustedPose());
         var target = AlignMath.targetPose(tags.get(4), AlignConstants.OFFSET_DISTANCE_M, 0);
         controller.start(0, target, new ChassisSpeeds(), tags, new int[]{4});
         for (int i=0; i<AlignConstants.ALIGNED_LOOPS; i++) {
@@ -86,6 +94,7 @@ class AlignSimTest {
             new Scenario("heading 45deg", 1.4, 0, 45, "none", 1),
             new Scenario("FOV edge", 1.4, 0, 49, "none", 1),
             new Scenario("red alliance", 1.5, 1.0, 0, "red", 1),
+            new Scenario("untrusted pose", 1.5, 1.0, 0, "untrusted", 1),
             new Scenario("unknown alliance", 1.5, 1.0, 0, "unknown", 1),
             new Scenario("side", 1.5, 1.0, 0, "none", 1),
             new Scenario("lost halfway", 2.7, 0, 0, "lost", 1),
@@ -110,7 +119,8 @@ class AlignSimTest {
         assertEquals(10.84, robot.maxSpeed, 1e-6); assertTrue(robot.manualDeadband > 1);
         var controller = new AlignController(() -> s.event.equals("unknown") ? Optional.empty()
             : Optional.of(s.event.equals("red") ? edu.wpi.first.wpilibj.DriverStation.Alliance.Red
-                : edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
+                : edu.wpi.first.wpilibj.DriverStation.Alliance.Blue),
+            s.event.equals("untrusted") ? () -> false : trustedPose());
         controller.start(0, robot.pose, robot.speed, tags, AlignConstants.PEG_TAG_IDS);
         scoreDenied(controller, 0);
         var freshness = new TagFreshness();
@@ -188,7 +198,7 @@ class AlignSimTest {
                 assertEquals(0, output.omegaRadiansPerSecond);
                 if (Double.isNaN(stoppedAt)) stoppedAt = now;
             }
-            if (s.event.equals("unknown")) {
+            if (s.event.equals("unknown") || s.event.equals("untrusted")) {
                 assertTrue(controller.isFinished()); assertFalse(controller.isAligned(now));
                 assertEquals(0, Math.hypot(output.vxMetersPerSecond, output.vyMetersPerSecond));
                 assertEquals(0, output.omegaRadiansPerSecond);
@@ -218,7 +228,7 @@ class AlignSimTest {
         assertEquals(0, falseAligned, s.name); assertEquals(0, violations, s.name);
         double xy = robot.pose.getTranslation().getDistance(target.getTranslation());
         double theta = Math.abs(robot.pose.getRotation().minus(target.getRotation()).getDegrees());
-        if (s.event.equals("unknown")) {
+        if (s.event.equals("unknown") || s.event.equals("untrusted")) {
             assertFalse(sawAligned);
             assertEquals(Math.hypot(s.distance, s.side), xy, 1e-9);
         } else if (s.event.equals("reset")) {

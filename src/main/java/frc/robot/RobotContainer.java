@@ -199,7 +199,8 @@ public class RobotContainer {
         // Hold-to-align to nearest peg tag: right trigger. Not bound unless ALIGN_ENABLED.
         if (AlignConstants.ALIGN_ENABLED && FieldLayoutLoader.isAvailable()) {
             final AlignToPegCommand align =
-                new AlignToPegCommand(drivetrain, m_VisionSubsystem::getLastAcceptedTimestampForTag);
+                new AlignToPegCommand(drivetrain, m_VisionSubsystem::getLastAcceptedTimestampForTag,
+                    m_VisionSubsystem::isPoseTrusted);
             alignCmd = align;
             m_VisionSubsystem.setAlignActiveSupplier(align::isScheduled);
             edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Align/HandoffHoldingZero", false);

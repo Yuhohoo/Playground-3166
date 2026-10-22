@@ -20,11 +20,16 @@ public class VisionSubsystem extends SubsystemBase {
     private final List<Double> lastPerCamera = new ArrayList<>();
     private final TagFreshness tagFreshness = new TagFreshness();
     private java.util.function.BooleanSupplier alignActive = () -> false;
-    private final VisionBootstrap bootstrapPolicy = new VisionBootstrap();
+    private final VisionBootstrap bootstrapPolicy;
 
     private double lastAcceptedTimestamp = Double.NEGATIVE_INFINITY;
 
     public VisionSubsystem(CommandSwerveDrivetrain drivetrain) {
+        this(drivetrain, edu.wpi.first.wpilibj.DriverStation::isEnabled);
+    }
+
+    public VisionSubsystem(CommandSwerveDrivetrain drivetrain, java.util.function.BooleanSupplier enabled) {
+        this.bootstrapPolicy = new VisionBootstrap(enabled);
         this.drivetrain = drivetrain;
         for (String name : new String[] {VisionConstants.CAMERA_1, VisionConstants.CAMERA_2}) {
             if (name != null && !name.isEmpty()) {
@@ -39,6 +44,8 @@ public class VisionSubsystem extends SubsystemBase {
         this.alignActive = java.util.Objects.requireNonNull(alignActive);
     }
 
+    public boolean isPoseTrusted() { return bootstrapPolicy.isPoseTrusted(); }
+
     /** FPGA timestamp (s) of the newest accepted frame from any camera; -inf if none. */
     public double getLastAcceptedTimestamp() {
         return lastAcceptedTimestamp;
@@ -51,10 +58,12 @@ public class VisionSubsystem extends SubsystemBase {
 
     @Override
     public void periodic() {
-        boolean enabled = edu.wpi.first.wpilibj.DriverStation.isEnabled();
+        boolean ready = bootstrapPolicy.beginLoop();
+        bootstrapPolicy.observeAlign(alignActive.getAsBoolean());
+        SmartDashboard.putBoolean("Align/PoseTrusted", isPoseTrusted());
         // Subsystem periodic precedes trigger polling: defer enable edge for held align triggers.
-        if (!bootstrapPolicy.beginLoop(enabled)) return;
-        if (!enabled || !VisionConstants.FUSION_ENABLED || !FieldLayoutLoader.isAvailable()) return;
+        if (!ready) return;
+        if (!VisionConstants.FUSION_ENABLED || !FieldLayoutLoader.isAvailable()) return;
         var state = drivetrain.getState();
         double headingDeg = state.Pose.getRotation().getDegrees();
         double yawRateDegPerSec = Math.toDegrees(state.Speeds.omegaRadiansPerSecond);
@@ -64,7 +73,7 @@ public class VisionSubsystem extends SubsystemBase {
             String cam = cameras.get(i);
             LimelightHelpers.SetRobotOrientation(cam, headingDeg, yawRateDegPerSec, 0, 0, 0, 0);
             var est = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2(cam);
-            if (est == null) continue;
+            if (est == null) { bootstrapPolicy.rejectFrame(); continue; }
             // Validate the entire frame against the layout before fusing its pose.
             int[] ids = est.rawFiducials == null ? new int[0]
                 : java.util.Arrays.stream(est.rawFiducials).mapToInt(f -> f.id).toArray();
@@ -74,13 +83,20 @@ public class VisionSubsystem extends SubsystemBase {
             var result = VisionFilter.evaluateIds(ids, layoutIds);
             if (result == VisionFilter.Result.ACCEPT) result = VisionFilter.evaluate(ids.length, yawRateDegPerSec, est.timestampSeconds,
                 now, lastPerCamera.get(i));
+            if (result != VisionFilter.Result.ACCEPT) { bootstrapPolicy.rejectFrame(); continue; }
+            // Consume each exposure once, including bootstrap candidates outside the jump gate.
+            lastPerCamera.set(i, est.timestampSeconds);
             boolean bootstrap = bootstrapPolicy.shouldReset(alignActive.getAsBoolean(), ids, layoutIds,
                 ids.length == 1 ? est.rawFiducials[0].distToCamera : Double.NaN,
-                ids.length == 1 ? est.rawFiducials[0].ambiguity : Double.NaN);
+                ids.length == 1 ? est.rawFiducials[0].ambiguity : Double.NaN, est.pose);
+            if (!bootstrap && bootstrapPolicy.isCollectingSingleTag()) {
+                SmartDashboard.putString("Vision/" + cam + "/Result", "STABILIZING");
+                continue;
+            }
             if (result == VisionFilter.Result.ACCEPT)
                 result = VisionFilter.evaluatePoseJump(est.pose, drivetrain.getState().Pose, bootstrap);
             SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
-            if (result != VisionFilter.Result.ACCEPT) continue;
+            if (result != VisionFilter.Result.ACCEPT) { bootstrapPolicy.rejectFrame(); continue; }
 
             double[] sd = VisionFilter.stdDevs(est.avgTagDist);
             // Drivetrain override applies Utils.fpgaToCurrentTime; pass the raw FPGA timestamp.
@@ -97,6 +113,7 @@ public class VisionSubsystem extends SubsystemBase {
             tagFreshness.record(allowed, est.timestampSeconds);
             lastAcceptedTimestamp = Math.max(lastAcceptedTimestamp, est.timestampSeconds);
         }
+        SmartDashboard.putBoolean("Align/PoseTrusted", isPoseTrusted());
         SmartDashboard.putNumber("Vision/LastAcceptedAgeSec", now - lastAcceptedTimestamp);
     }
 }

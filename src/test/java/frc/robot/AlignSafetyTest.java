@@ -9,8 +9,16 @@ import frc.robot.align.*;
 import frc.robot.vision.VisionFilter;
 
 class AlignSafetyTest {
+    private static java.util.function.BooleanSupplier trustedPose() {
+        var policy = new frc.robot.vision.VisionBootstrap();
+        if (!policy.shouldReset(false, new int[]{4,8}, new int[]{4,8}, 1, .1,
+                new Pose2d())) throw new AssertionError("bootstrap rejected");
+        policy.didReset();
+        return policy::isPoseTrusted;
+    }
+
     @Test void unknownAllianceNeverMoves() {
-        var controller = new AlignController(Optional::empty);
+        var controller = new AlignController(Optional::empty, trustedPose());
         controller.start(0, new Pose2d(), new ChassisSpeeds(),
             Map.of(4, new Pose2d(3, 3, new Rotation2d())), new int[]{4});
         for (int i = 0; i < 250; i++) {
@@ -23,7 +31,7 @@ class AlignSafetyTest {
     }
 
     @Test void diagonalCapPreservesDirection() {
-        var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
+        var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue), trustedPose());
         // Target is (3,3), so equal errors must produce equal components.
         controller.start(0, new Pose2d(), new ChassisSpeeds(),
             Map.of(4, new Pose2d(2.4, 3, new Rotation2d())), new int[]{4});
@@ -67,7 +75,7 @@ class AlignSafetyTest {
 
     @Test void forcedPoseResetLatchesZeroAndClearsAlignment() {
         for (boolean headingOnly : new boolean[]{false, true}) {
-            var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
+            var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue), trustedPose());
             var tag = new Pose2d(3, 3, new Rotation2d());
             var target = AlignMath.targetPose(tag, Constants.AlignConstants.OFFSET_DISTANCE_M, 0);
             controller.start(0, target, new ChassisSpeeds(), Map.of(4, tag), new int[]{4});
@@ -122,7 +130,7 @@ class AlignSafetyTest {
     @Test void forcedTranslationOrHeadingResetLatchesZeroAndNotAligned() {
         for (Pose2d reset : new Pose2d[]{new Pose2d(3,0,new Rotation2d()),
                 new Pose2d(0,0,Rotation2d.fromDegrees(90))}) {
-            var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue));
+            var controller = new AlignController(() -> Optional.of(edu.wpi.first.wpilibj.DriverStation.Alliance.Blue), trustedPose());
             controller.start(0, new Pose2d(), new ChassisSpeeds(),
                 Map.of(4, new Pose2d(3,0,new Rotation2d())), new int[]{4});
             controller.update(.02, new Pose2d(), id -> .02);
