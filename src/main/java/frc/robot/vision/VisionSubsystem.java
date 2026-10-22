@@ -73,7 +73,7 @@ public class VisionSubsystem extends SubsystemBase {
             String cam = cameras.get(i);
             LimelightHelpers.SetRobotOrientation(cam, headingDeg, yawRateDegPerSec, 0, 0, 0, 0);
             var est = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2(cam);
-            if (est == null) { bootstrapPolicy.rejectFrame(); continue; }
+            if (est == null) { bootstrapPolicy.rejectFrame(cam); continue; }
             // Validate the entire frame against the layout before fusing its pose.
             int[] ids = est.rawFiducials == null ? new int[0]
                 : java.util.Arrays.stream(est.rawFiducials).mapToInt(f -> f.id).toArray();
@@ -83,20 +83,20 @@ public class VisionSubsystem extends SubsystemBase {
             var result = VisionFilter.evaluateIds(ids, layoutIds);
             if (result == VisionFilter.Result.ACCEPT) result = VisionFilter.evaluate(ids.length, yawRateDegPerSec, est.timestampSeconds,
                 now, lastPerCamera.get(i));
-            if (result != VisionFilter.Result.ACCEPT) { bootstrapPolicy.rejectFrame(); continue; }
+            if (result != VisionFilter.Result.ACCEPT) { bootstrapPolicy.rejectFrame(cam); continue; }
             // Consume each exposure once, including bootstrap candidates outside the jump gate.
             lastPerCamera.set(i, est.timestampSeconds);
-            boolean bootstrap = bootstrapPolicy.shouldReset(alignActive.getAsBoolean(), ids, layoutIds,
+            boolean bootstrap = bootstrapPolicy.shouldReset(cam, alignActive.getAsBoolean(), ids, layoutIds,
                 ids.length == 1 ? est.rawFiducials[0].distToCamera : Double.NaN,
                 ids.length == 1 ? est.rawFiducials[0].ambiguity : Double.NaN, est.pose);
-            if (!bootstrap && bootstrapPolicy.isCollectingSingleTag()) {
+            if (!bootstrap && bootstrapPolicy.isCollectingSingleTag(cam)) {
                 SmartDashboard.putString("Vision/" + cam + "/Result", "STABILIZING");
                 continue;
             }
             if (result == VisionFilter.Result.ACCEPT)
                 result = VisionFilter.evaluatePoseJump(est.pose, drivetrain.getState().Pose, bootstrap);
             SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
-            if (result != VisionFilter.Result.ACCEPT) { bootstrapPolicy.rejectFrame(); continue; }
+            if (result != VisionFilter.Result.ACCEPT) { bootstrapPolicy.rejectFrame(cam); continue; }
 
             double[] sd = VisionFilter.stdDevs(est.avgTagDist);
             // Drivetrain override applies Utils.fpgaToCurrentTime; pass the raw FPGA timestamp.

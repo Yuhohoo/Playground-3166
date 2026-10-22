@@ -16,7 +16,7 @@ import edu.wpi.first.wpilibj2.command.Commands;
 class AlignSimTest {
     private static java.util.function.BooleanSupplier trustedPose() {
         var policy = new frc.robot.vision.VisionBootstrap();
-        if (!policy.shouldReset(false, new int[]{4,8}, new int[]{4,8}, 1, .1,
+        if (!policy.shouldReset("camera-a", false, new int[]{4,8}, new int[]{4,8}, 1, .1,
                 new Pose2d())) throw new AssertionError("bootstrap rejected");
         policy.didReset();
         return policy::isPoseTrusted;
