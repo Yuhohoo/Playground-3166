@@ -8,6 +8,7 @@ public final class VisionBootstrap {
         int id = -1;
     }
     private final java.util.Map<String, SingleTagWindow> windows = new java.util.HashMap<>();
+    private final java.util.Map<String, Integer> jumpRejections = new java.util.HashMap<>();
     private boolean wasEnabled;
     private double disabledSince = Double.NaN;
     private final java.util.function.DoubleSupplier timestamp;
@@ -79,21 +80,26 @@ public final class VisionBootstrap {
         return VisionFilter.shouldBootstrap(bootstrapped, alignActive, ids, layoutIds, distance, ambiguity);
     }
 
-    /** Only jump-gate rejection invalidates trust; ordinary frame rejection does not. */
-    public VisionFilter.Result evaluatePoseJump(edu.wpi.first.math.geometry.Pose2d measured,
+    /** Called once per fresh exposure; rejected poses are never fused. */
+    public VisionFilter.Result evaluatePoseJump(String camera, edu.wpi.first.math.geometry.Pose2d measured,
             edu.wpi.first.math.geometry.Pose2d estimated, boolean bootstrap) {
         var result = VisionFilter.evaluatePoseJump(measured, estimated, bootstrap);
-        if (result != VisionFilter.Result.ACCEPT) clearPoseTrust();
+        if (result == VisionFilter.Result.POSE_JUMP
+                && jumpRejections.merge(camera, 1, Integer::sum)
+                    >= frc.robot.Constants.VisionConstants.VISION_TRUST_DROP_FRAMES) clearPoseTrust();
         return result;
     }
+
+    /** Only a fresh frame actually fused by this camera resets its rejection count. */
+    public void didFuse(String camera) { jumpRejections.remove(camera); }
 
     private long trustDrops;
     public long getTrustDrops() { return trustDrops; }
 
     public void clearPoseTrust() {
         if (bootstrapped) trustDrops++;
-        bootstrapped = false; windows.clear();
+        bootstrapped = false; windows.clear(); jumpRejections.clear();
     }
 
-    public void didReset() { bootstrapped = true; windows.clear(); }
+    public void didReset() { bootstrapped = true; windows.clear(); jumpRejections.clear(); }
 }

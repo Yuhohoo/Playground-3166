@@ -31,9 +31,18 @@ class AlignSafetyTest {
                 controller.update(now, target, id -> now);
             }
             assertTrue(controller.isAligned(.18));
-            if (jump) assertEquals(VisionFilter.Result.POSE_JUMP, trust.evaluatePoseJump(
+            if (jump) {
+                for (int bad = 1; bad <= 3; bad++) {
+                    assertEquals(VisionFilter.Result.POSE_JUMP, trust.evaluatePoseJump("camera-a",
                 new Pose2d(target.getX()+2, target.getY(), target.getRotation()), target, false));
-            else trust.clearPoseTrust();
+                    if (bad < 3) {
+                        assertTrue(trust.isPoseTrusted());
+                        controller.update(.18 + bad*.002, target, id -> .18);
+                        assertFalse(controller.isFinished());
+                        assertTrue(controller.isAligned(.18 + bad*.002));
+                    }
+                }
+            } else trust.clearPoseTrust();
             assertFalse(controller.isAligned(.20)); // Even before command execute this cycle.
             assertEquals(1, trust.getTrustDrops());
             trust.clearPoseTrust();

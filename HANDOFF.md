@@ -105,3 +105,24 @@ Our ALIGN_ENABLED block schedules one shared DriverHandoff hold-zero command fro
 VisionSubsystem publishes Align/TrustDrops from its testable VisionBootstrap tracker. Each true-to-false transition increments once, including jump rejection, long disable and explicit trust clearing; repeated clears while already false do not increment. Only bootstrap restores trust.
 
 Validation: **53 tests passed, 0 failures/errors/skips** using `JAVA_HOME=~/jdk17 bash ./gradlew build test`. Separate sim rerun: **4 tests / 20 scenarios passed**. New `trust drop mid-align` row ends POSE_UNTRUSTED, zero false alignment/cap violations, final xy 0.863 m; all prior scenario metrics unchanged. Regressions include trust loss after aligned, arbitrary clearing, trust-drop counter transitions, and held-trigger scheduler handoff before default drive. Not robot validated or deployed. All three enable flags remain false, deployment tags empty, and placeholders test-only.
+
+
+## Per-camera trust-drop threshold (current revision)
+
+Supersedes earlier single-jump trust-loss descriptions: VisionConstants.VISION_TRUST_DROP_FRAMES
+is 3, commented "starting guess, not measured, tune on robot". Each camera counts its own
+fresh jump-rejected frames; three drop trust, while one or two preserve running alignment.
+A fresh accepted/fused frame resets only that camera's count. Duplicate timestamps count
+neither way; rejected poses still never fuse. Alternating A,B,A,B leaves each at two;
+a third rejection from either camera drops trust. Ordinary rejections do not advance counts.
+Successful bootstrap and trust clearing clear counters. Boot, long disable and POSE_RESET
+trust clearing remain unchanged. Running align still ends POSE_UNTRUSTED with zero output
+on trust loss, preserving a810226 behavior; Align/TrustDrops still counts true-to-false transitions.
+
+Validation: **56 tests passed, 0 failures/errors/skips** with the documented build command;
+separate sim rerun **4 tests / 20 scenarios passed**. Moved-while-disabled and mid-align
+regressions now require three rejected frames. Only changed sim metric: `trust drop mid-align`
+final xy **0.863 -> 0.823 m**, with trust dropping at 0.84 s instead of 0.80 s.
+All other rows/columns unchanged, zero false alignment/cap violations. No drive/control changes;
+all three switches false, deploy tags empty, synthetic placeholders test-only. Not pushed,
+not deployed, not robot validated.

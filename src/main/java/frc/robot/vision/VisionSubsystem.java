@@ -106,7 +106,7 @@ public class VisionSubsystem extends SubsystemBase {
                 continue;
             }
             if (result == VisionFilter.Result.ACCEPT)
-                result = bootstrapPolicy.evaluatePoseJump(est.pose, drivetrain.getState().Pose, bootstrap);
+                result = bootstrapPolicy.evaluatePoseJump(cam, est.pose, drivetrain.getState().Pose, bootstrap);
             SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
             if (!bootstrapPolicy.acceptFrame(cam, result)) continue;
 
@@ -120,6 +120,7 @@ public class VisionSubsystem extends SubsystemBase {
             } else {
                 drivetrain.addVisionMeasurement(est.pose, est.timestampSeconds,
                     VecBuilder.fill(sd[0], sd[1], sd[2]));
+                bootstrapPolicy.didFuse(cam);
             }
             lastPerCamera.set(i, est.timestampSeconds);
             tagFreshness.record(allowed, est.timestampSeconds);

@@ -1,4 +1,4 @@
-Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test` — **53 tests, 0 failures, 0 errors, 0 skipped**.
+Validation: `JAVA_HOME=~/jdk17 bash ./gradlew build test` — **56 tests, 0 failures, 0 errors, 0 skipped**.
 Separate sim rerun: `JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim.AlignSimTest --rerun-tasks` — **4 tests passed; 20 scenarios**.
 
 | Scenario | Converge s | Final xy m | Theta deg | Overshoot m | Sign changes | False aligned | End | Cap violations |
@@ -6,7 +6,7 @@ Separate sim rerun: `JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim
 | auto->teleop short disable | 1.28 | 0.000 | 0.01 | 0.005 | 0 | 0 | TIMED_OUT | 0 |
 | moved while disabled | — | 0.650 | 0.00 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
 | long disable | — | 0.650 | 0.00 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
-| trust drop mid-align | — | 0.863 | 0.01 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
+| trust drop mid-align | — | 0.823 | 0.01 | 0.000 | 0 | 0 | POSE_UNTRUSTED | 0 |
 | near | 1.28 | 0.000 | 0.01 | 0.005 | 0 | 0 | TIMED_OUT | 0 |
 | far | 3.34 | 0.000 | 0.01 | 0.005 | 1 | 0 | TIMED_OUT | 0 |
 | heading 45deg | 2.04 | 0.000 | 0.01 | 0.005 | 1 | 0 | TIMED_OUT | 0 |
@@ -61,3 +61,21 @@ tags remain empty. No robot validation or deployment.
 Current revision: **53 tests passed**, no failures/errors/skips; separate sim rerun **4 tests / 20 scenarios passed**. The new **trust drop mid-align** scenario injects a jump-gate rejection at 0.80 s through the production VisionBootstrap trust tracker while alignment is running. That cycle and every later cycle return zero, end POSE_UNTRUSTED and never report aligned; Align/TrustDrops increments once. The remaining 19 scenario metrics are unchanged. The older `pose jump` scenario isolates filter rejection/recovery without mutating the trust tracker; the new scenario checks the integrated trust-loss behavior.
 
 Unit regression also drops trust after reaching aligned, checks isAligned before the next update, verifies arbitrary trust clearing, repeat-clear counting and no resurrection after trust recovery. A scheduler regression holds the trigger through self-completion with off-center sticks: the single DriverHandoff command owns drive and commands zero, default drive never executes until neutral, and releasing the held trigger does not restart alignment or schedule another handoff. Software zero output is not a measured physical stopping distance.
+
+
+## Per-camera jump rejection threshold (current revision)
+
+Full build/test: **56 tests passed, 0 failures/errors/skips**. Separate sim rerun:
+**4 tests / 20 scenarios passed**. VISION_TRUST_DROP_FRAMES = 3 is a starting guess,
+not measured, tune on robot. Trust now drops after three fresh jump-rejected exposures
+from the same camera. One or two retain trust and running alignment. Other cameras'
+frames do not increment that count; a fresh fused frame resets only its own camera.
+Duplicate timestamps neither increment nor reset counts. Jump-rejected frames never fuse.
+Boot, long-disable and POSE_RESET clearing and true-to-false TrustDrops counting are unchanged.
+This supersedes the single-rejection trust-loss descriptions in earlier revision notes.
+
+The moved-while-disabled scenario supplies three rejected exposures before teleop starts;
+its metrics are unchanged. The running trust-drop scenario supplies rejections at 0.80,
+0.82 and 0.84 s; it ends POSE_UNTRUSTED with zero output on the third rejection.
+Only changed row: `trust drop mid-align`, final xy **0.863 -> 0.823 m**; all other columns
+and the other 19 rows are unchanged. All scenarios retain zero false alignment and cap violations.

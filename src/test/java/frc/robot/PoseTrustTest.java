@@ -60,8 +60,9 @@ class PoseTrustTest {
         var moved = new Pose2d(target.getX()+2, target.getY(), target.getRotation());
         boolean reset = policy.shouldReset("camera-a", false, new int[]{4,8}, new int[]{4,8}, 1, .1, moved);
         assertFalse(reset);
+        for (int bad = 0; bad < 3; bad++)
         assertEquals(frc.robot.vision.VisionFilter.Result.POSE_JUMP,
-            policy.evaluatePoseJump(moved, target, reset));
+            policy.evaluatePoseJump("camera-a", moved, target, reset));
         assertFalse(policy.isPoseTrusted());
         controller.start(4.02, target, new ChassisSpeeds(), tags, new int[]{4});
         assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
@@ -174,9 +175,60 @@ class PoseTrustTest {
         var policy = new VisionBootstrap(); policy.didReset();
         policy.rejectFrame("camera-a"); policy.observeAlign(true);
         assertTrue(policy.isPoseTrusted());
+        for (int bad = 0; bad < 3; bad++)
         assertEquals(frc.robot.vision.VisionFilter.Result.POSE_JUMP,
-            policy.evaluatePoseJump(new Pose2d(2, 0, new edu.wpi.first.math.geometry.Rotation2d()), new Pose2d(), false));
+            policy.evaluatePoseJump("camera-a", new Pose2d(2, 0, new edu.wpi.first.math.geometry.Rotation2d()), new Pose2d(), false));
         assertFalse(policy.isPoseTrusted());
+    }
+
+    private void bad(VisionBootstrap policy, String camera) {
+        assertEquals(frc.robot.vision.VisionFilter.Result.POSE_JUMP,
+            policy.evaluatePoseJump(camera, new Pose2d(2, 0,
+                new edu.wpi.first.math.geometry.Rotation2d()), new Pose2d(), false));
+    }
+
+    @Test void alternatingCamerasDoNotCombineRejections() {
+        var policy = new VisionBootstrap(); policy.didReset();
+        for (int frame = 0; frame < 4; frame++) {
+            bad(policy, frame % 2 == 0 ? "camera-a" : "camera-b");
+            assertTrue(policy.isPoseTrusted());
+            assertEquals(0, policy.getTrustDrops());
+        }
+        bad(policy, "camera-a"); // A's third exposure, independent of B's two.
+        assertFalse(policy.isPoseTrusted());
+        assertEquals(1, policy.getTrustDrops());
+    }
+
+    @Test void fusedFrameResetsOnlyItsOwnCamera() {
+        var policy = new VisionBootstrap(); policy.didReset();
+        bad(policy, "camera-a"); bad(policy, "camera-a");
+        bad(policy, "camera-b"); bad(policy, "camera-b");
+        assertEquals(frc.robot.vision.VisionFilter.Result.ACCEPT,
+            policy.evaluatePoseJump("camera-a", new Pose2d(), new Pose2d(), false));
+        policy.didFuse("camera-a");
+        bad(policy, "camera-a"); bad(policy, "camera-a");
+        assertTrue(policy.isPoseTrusted());
+        bad(policy, "camera-b");
+        assertFalse(policy.isPoseTrusted());
+    }
+
+    @Test void duplicateExposuresNeitherAdvanceNorResetRejectionCount() {
+        var policy = new VisionBootstrap(); policy.didReset();
+        double last = Double.NEGATIVE_INFINITY;
+        for (int fresh = 1; fresh <= 3; fresh++) {
+            double timestamp = fresh * .02;
+            assertTrue(policy.acceptFrame("camera-a", frc.robot.vision.VisionFilter.evaluate(
+                1, 0, timestamp, timestamp, last)));
+            last = timestamp;
+            bad(policy, "camera-a");
+            for (int repeat = 0; repeat < 5; repeat++) {
+                var result = frc.robot.vision.VisionFilter.evaluate(1, 0, timestamp, timestamp, last);
+                assertEquals(frc.robot.vision.VisionFilter.Result.DUPLICATE, result);
+                assertFalse(policy.acceptFrame("camera-a", result));
+            }
+            assertEquals(fresh < 3, policy.isPoseTrusted());
+        }
+        assertEquals(1, policy.getTrustDrops());
     }
 
     @Test void autoEndsTrustedAndTeleopCanStartImmediatelyAfterShortDisable() {

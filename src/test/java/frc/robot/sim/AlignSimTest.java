@@ -139,7 +139,8 @@ class AlignSimTest {
                 var moved = new Pose2d(robot.pose.getX()+2, robot.pose.getY(), robot.pose.getRotation());
                 boolean reset = trust.shouldReset("camera-a", false, new int[]{4,8}, layoutIds, 1, .1, moved);
                 assertFalse(reset);
-                assertEquals(VisionFilter.Result.POSE_JUMP, trust.evaluatePoseJump(moved, robot.pose, reset));
+                for (int bad = 0; bad < 3; bad++)
+                assertEquals(VisionFilter.Result.POSE_JUMP, trust.evaluatePoseJump("camera-a", moved, robot.pose, reset));
                 assertFalse(trust.isPoseTrusted());
             }
         }
@@ -210,15 +211,15 @@ class AlignSimTest {
             // External reset changes only estimation, not the physical robot pose.
             if (s.event.equals("reset") && i==40)
                 estimated = new Pose2d(estimated.getX()+2, estimated.getY(), estimated.getRotation());
-            if (s.event.equals("trust-drop") && i==40) {
+            if (s.event.equals("trust-drop") && i>=40 && i<=42) {
                 assertFalse(controller.isFinished());
-                assertEquals(VisionFilter.Result.POSE_JUMP, trust.evaluatePoseJump(
+                assertEquals(VisionFilter.Result.POSE_JUMP, trust.evaluatePoseJump("camera-a",
                     new Pose2d(estimated.getX()+2, estimated.getY(), estimated.getRotation()), estimated, false));
-                assertFalse(controller.isAligned(now));
-                assertEquals(1, trust.getTrustDrops());
+                assertEquals(i == 42 ? 1 : 0, trust.getTrustDrops());
+                if (i == 42) assertFalse(controller.isAligned(now));
             }
             var output = controller.update(now, estimated, freshness::get);
-            if (s.event.equals("trust-drop") && i>=40) {
+            if (s.event.equals("trust-drop") && i>=42) {
                 assertEquals(AlignStateMachine.Status.POSE_UNTRUSTED, controller.status());
                 assertTrue(controller.isFinished());
                 assertFalse(controller.isAligned(now));
