@@ -44,6 +44,8 @@ public class VisionSubsystem extends SubsystemBase {
         this.alignActive = java.util.Objects.requireNonNull(alignActive);
     }
 
+    public void clearPoseTrust() { bootstrapPolicy.clearPoseTrust(); }
+
     public boolean isPoseTrusted() { return bootstrapPolicy.isPoseTrusted(); }
 
     /** FPGA timestamp (s) of the newest accepted frame from any camera; -inf if none. */
@@ -74,6 +76,9 @@ public class VisionSubsystem extends SubsystemBase {
             LimelightHelpers.SetRobotOrientation(cam, headingDeg, yawRateDegPerSec, 0, 0, 0, 0);
             var est = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2(cam);
             if (est == null) { bootstrapPolicy.rejectFrame(cam); continue; }
+            // Ignore repeated exposures before any other validation or stability mutation.
+            if (!bootstrapPolicy.acceptFrame(cam, est.timestampSeconds == lastPerCamera.get(i)
+                    ? VisionFilter.Result.DUPLICATE : VisionFilter.Result.ACCEPT)) continue;
             // Validate the entire frame against the layout before fusing its pose.
             int[] ids = est.rawFiducials == null ? new int[0]
                 : java.util.Arrays.stream(est.rawFiducials).mapToInt(f -> f.id).toArray();
@@ -83,7 +88,7 @@ public class VisionSubsystem extends SubsystemBase {
             var result = VisionFilter.evaluateIds(ids, layoutIds);
             if (result == VisionFilter.Result.ACCEPT) result = VisionFilter.evaluate(ids.length, yawRateDegPerSec, est.timestampSeconds,
                 now, lastPerCamera.get(i));
-            if (result != VisionFilter.Result.ACCEPT) { bootstrapPolicy.rejectFrame(cam); continue; }
+            if (!bootstrapPolicy.acceptFrame(cam, result)) continue;
             // Consume each exposure once, including bootstrap candidates outside the jump gate.
             lastPerCamera.set(i, est.timestampSeconds);
             boolean bootstrap = bootstrapPolicy.shouldReset(cam, alignActive.getAsBoolean(), ids, layoutIds,
@@ -94,9 +99,9 @@ public class VisionSubsystem extends SubsystemBase {
                 continue;
             }
             if (result == VisionFilter.Result.ACCEPT)
-                result = VisionFilter.evaluatePoseJump(est.pose, drivetrain.getState().Pose, bootstrap);
+                result = bootstrapPolicy.evaluatePoseJump(est.pose, drivetrain.getState().Pose, bootstrap);
             SmartDashboard.putString("Vision/" + cam + "/Result", result.name());
-            if (result != VisionFilter.Result.ACCEPT) { bootstrapPolicy.rejectFrame(cam); continue; }
+            if (!bootstrapPolicy.acceptFrame(cam, result)) continue;
 
             double[] sd = VisionFilter.stdDevs(est.avgTagDist);
             // Drivetrain override applies Utils.fpgaToCurrentTime; pass the raw FPGA timestamp.

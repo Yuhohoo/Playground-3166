@@ -201,6 +201,7 @@ public class RobotContainer {
             final AlignToPegCommand align =
                 new AlignToPegCommand(drivetrain, m_VisionSubsystem::getLastAcceptedTimestampForTag,
                     m_VisionSubsystem::isPoseTrusted);
+            align.setPoseResetHandler(m_VisionSubsystem::clearPoseTrust);
             alignCmd = align;
             m_VisionSubsystem.setAlignActiveSupplier(align::isScheduled);
             edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Align/HandoffHoldingZero", false);

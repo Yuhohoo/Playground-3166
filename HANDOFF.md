@@ -63,10 +63,35 @@ Align: offsets (`OFFSET_DISTANCE_M`, `OFFSET_LATERAL_M` — verify sign of later
 - Reproduce: `JAVA_HOME=~/jdk17 bash ./gradlew build test`.
 
 ## This revision vs bb67c3f
-Single-tag reset requires VISION_SINGLE_TAG_STABLE_FRAMES = 5 and maximum pairwise translation spread <= VISION_SINGLE_TAG_MAX_SPREAD_M = 0.05. Both are starting guesses, not measured, tune on robot. Existing distance/ambiguity limits remain. Pending candidates do not fuse; missing/rejected frames (including duplicate timestamps) and ID changes clear only the originating camera's rolling window, keyed by camera name. Disable/enable, scheduled align and successful reset clear all windows. Each exposure is consumed once. Single-tag readings never reset or bypass the jump gate during align.
+Single-tag reset requires VISION_SINGLE_TAG_STABLE_FRAMES = 5 and maximum pairwise translation spread <= VISION_SINGLE_TAG_MAX_SPREAD_M = 0.05. Both are starting guesses, not measured, tune on robot. Existing distance/ambiguity limits remain. Pending candidates do not fuse; missing/rejected fresh frames (duplicates are skipped) and ID changes clear only the originating camera's rolling window, keyed by camera name. Disable/enable, scheduled align and successful reset clear all windows. Each exposure is consumed once. Single-tag readings never reset or bypass the jump gate during align.
 
-VisionBootstrap holds testable pose trust, false at boot and every enable edge through an injected supplier. Only a successful bootstrap reset grants trust; ordinary accepted fusion before bootstrap cannot. VisionSubsystem publishes Align/PoseTrusted. AlignController/AlignToPegCommand take an injected trust supplier and refuse startup with zero output, NOT aligned and POSE_UNTRUSTED. Held-at-enable align may refuse; release/repress after bootstrap. Existing enable-edge deferral remains.
+VisionBootstrap holds testable pose trust, false at boot and after a disabled duration longer than POSE_TRUST_MAX_DISABLE_S (5.0 s), measured with injected timestamps. Only a successful bootstrap reset grants trust; ordinary accepted fusion before bootstrap cannot. VisionSubsystem publishes Align/PoseTrusted. AlignController/AlignToPegCommand take an injected trust supplier and refuse startup with zero output, NOT aligned and POSE_UNTRUSTED. Held-at-enable align may refuse; release/repress after bootstrap. Existing enable-edge deferral remains.
 
 Validation: 46 tests pass, plus separate sim rerun (4 tests, 16 scenarios). Added untrusted-pose refusal; all 15 shared sim scenarios retain bb67c3f metrics, zero false alignment and cap violations throughout. Added stable/unstable, ID/rejection/scheduled window reset, bootstrap-dependent align and re-enable trust tests. See docs/SIM_RESULTS.md and docs/REAL_ROBOT_RISKS.md. No robot validation or deployment; all switches false and deployment tags empty.
 
 Per-camera window regression validation: camera A completes its five-frame single-tag bootstrap while camera B has no estimate each loop. A rejected frame from A restarts only A's streak; B's streak survives. Scheduled align clears both cameras' windows. Full build/test: **46 tests passed**, no failures/errors/skips. Separate sim rerun: **4 tests, 16 scenarios passed**, unchanged metrics with zero false alignment and cap violations. All switches remain false and deployment tags empty.
+
+
+## Pose-trust lifetime revision
+POSE_TRUST_MAX_DISABLE_S = 5.0 is a starting guess, not measured, tune on robot. Trust clears only at boot, after a disabled period strictly longer than this limit (checked while disabled and on re-enable using injected timestamps), on jump-gate rejection, or when align ends with POSE_RESET. The align command's end/stop callback is wired to the vision trust tracker in our ALIGN_ENABLED block. Ordinary frame rejection, normal align completion, short disable and enable do not clear trust. Bootstrap windows still clear on disable/enable; first-enabled-loop deferral remains. Only successful bootstrap grants trust. A 1–3 s auto-to-teleop transition can align immediately without re-bootstrap.
+
+Validation: **49 tests pass**, separate sim rerun **4 tests / 18 scenarios**. Short-disable scenario converges without re-bootstrap; long-disable scenario refuses POSE_UNTRUSTED. All prior scenario metrics unchanged. No robot validation or deployment. Switches false and deployment tags empty; no drive/control/TunerConstants/CommandSwerveDrivetrain changes.
+
+
+## Duplicate exposures and movement during disable
+Current validation: **51 tests passed, 0 failures/errors/skips** with
+`JAVA_HOME=~/jdk17 bash ./gradlew build test`. Separate sim rerun:
+`JAVA_HOME=~/jdk17 bash ./gradlew test --tests frc.robot.sim.AlignSimTest --rerun-tasks`
+— **4 tests, 19 scenarios passed**. Earlier validation counts above describe prior revisions.
+
+Duplicate timestamps are skipped before frame validation and never call rejectFrame or advance/reset
+the originating camera's stability window. The pure bootstrap/filter regression alternates fresh
+and duplicate frames and reaches single-tag reset eligibility after exactly five fresh stable frames.
+
+Moved-while-disabled regression and sim: auto finishes aligned and trusted, a 3 s disable preserves
+trust, then a moved-pose vision frame fails the normal jump gate before teleop alignment starts.
+Trust clears and alignment refuses POSE_UNTRUSTED with zero output. The short-disable scenario
+still converges without re-bootstrap; long disable still refuses. All 19 scenarios have zero false
+alignment and cap violations. POSE_TRUST_MAX_DISABLE_S remains 5.0, commented as a starting guess,
+not measured, tune on robot. No drive/control changes; all three switches remain false and deploy
+tags remain empty. No robot validation or deployment.

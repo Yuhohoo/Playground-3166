@@ -102,7 +102,13 @@ public final class AlignController {
         return new ChassisSpeeds(previousCommand.vxMetersPerSecond, previousCommand.vyMetersPerSecond,
             previousCommand.omegaRadiansPerSecond);
     }
-    public void stop() { active = false; target = null; targetId = -1; machine.reset(); }
+    private Runnable poseResetHandler = () -> {};
+    public void setPoseResetHandler(Runnable handler) {
+        poseResetHandler = java.util.Objects.requireNonNull(handler);
+    }
+    public void stop() {
+        if (machine.getStatus() == AlignStateMachine.Status.POSE_RESET) poseResetHandler.run();
+        active = false; target = null; targetId = -1; machine.reset(); }
     public boolean isAligned(double now) { return active && machine.isAligned(now); }
     public boolean isFinished() { return !active || machine.getStatus() != AlignStateMachine.Status.RUNNING; }
     public int targetId() { return targetId; }

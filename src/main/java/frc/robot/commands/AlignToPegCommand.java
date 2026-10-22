@@ -48,6 +48,9 @@ public class AlignToPegCommand extends Command {
         addRequirements(drivetrain);
     }
 
+    /** Invoked on end with POSE_RESET before the controller status is cleared. */
+    public void setPoseResetHandler(Runnable handler) { controller.setPoseResetHandler(handler); }
+
     public boolean isAligned() {
         return isScheduled() && controller.isAligned(Timer.getFPGATimestamp());
     }

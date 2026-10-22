@@ -1,6 +1,6 @@
 package frc.robot.vision;
 
-/** Per-enable bootstrap lifetime; defers the enable edge until triggers have been polled. */
+/** Pose trust lifetime; defers the enable edge until triggers have been polled. */
 public final class VisionBootstrap {
     private final java.util.function.BooleanSupplier enabled;
     private static final class SingleTagWindow {
@@ -9,14 +9,28 @@ public final class VisionBootstrap {
     }
     private final java.util.Map<String, SingleTagWindow> windows = new java.util.HashMap<>();
     private boolean wasEnabled;
+    private double disabledSince = Double.NaN;
+    private final java.util.function.DoubleSupplier timestamp;
 
     public VisionBootstrap() { this(() -> false); }
-    public VisionBootstrap(java.util.function.BooleanSupplier enabled) { this.enabled = enabled; }
+    public VisionBootstrap(java.util.function.BooleanSupplier enabled) {
+        this(enabled, edu.wpi.first.wpilibj.Timer::getFPGATimestamp);
+    }
+    public VisionBootstrap(java.util.function.BooleanSupplier enabled, java.util.function.DoubleSupplier timestamp) {
+        this.enabled = enabled;
+        this.timestamp = timestamp;
+    }
     public boolean beginLoop() { return beginLoop(enabled.getAsBoolean()); }
     public boolean isPoseTrusted() { return bootstrapped; }
     public boolean isCollectingSingleTag(String camera) { return windows.containsKey(camera); }
     /** Missing or rejected exposures only break this camera's consecutive-frame streak. */
     public void rejectFrame(String camera) { windows.remove(camera); }
+    /** Skip repeat exposures without changing stability; reject only fresh invalid frames. */
+    public boolean acceptFrame(String camera, VisionFilter.Result result) {
+        if (result == VisionFilter.Result.ACCEPT) return true;
+        if (result != VisionFilter.Result.DUPLICATE) rejectFrame(camera);
+        return false;
+    }
     public void observeAlign(boolean active) { if (active) windows.clear(); }
 
     /** Called only after frame validation, before the bootstrap-specific jump gate. */
@@ -45,8 +59,16 @@ public final class VisionBootstrap {
     private boolean bootstrapped;
 
     public boolean beginLoop(boolean enabled) {
+        return beginLoop(enabled, timestamp.getAsDouble());
+    }
+
+    public boolean beginLoop(boolean enabled, double now) {
         boolean justEnabled = enabled && !wasEnabled;
-        if (justEnabled) bootstrapped = false;
+        if (!enabled && (wasEnabled || Double.isNaN(disabledSince))) disabledSince = now;
+        if (!Double.isNaN(disabledSince)
+                && now - disabledSince > frc.robot.Constants.VisionConstants.POSE_TRUST_MAX_DISABLE_S)
+            clearPoseTrust();
+        if (enabled) disabledSince = Double.NaN;
         if (!enabled || justEnabled) windows.clear();
         wasEnabled = enabled;
         return enabled && !justEnabled;
@@ -56,6 +78,16 @@ public final class VisionBootstrap {
             double distance, double ambiguity) {
         return VisionFilter.shouldBootstrap(bootstrapped, alignActive, ids, layoutIds, distance, ambiguity);
     }
+
+    /** Only jump-gate rejection invalidates trust; ordinary frame rejection does not. */
+    public VisionFilter.Result evaluatePoseJump(edu.wpi.first.math.geometry.Pose2d measured,
+            edu.wpi.first.math.geometry.Pose2d estimated, boolean bootstrap) {
+        var result = VisionFilter.evaluatePoseJump(measured, estimated, bootstrap);
+        if (result != VisionFilter.Result.ACCEPT) clearPoseTrust();
+        return result;
+    }
+
+    public void clearPoseTrust() { bootstrapped = false; windows.clear(); }
 
     public void didReset() { bootstrapped = true; windows.clear(); }
 }

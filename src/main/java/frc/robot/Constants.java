@@ -84,6 +84,9 @@ public final class Constants {
          */
         public static final boolean FUSION_ENABLED = false;
 
+        // starting guess, not measured, tune on robot
+        public static final double POSE_TRUST_MAX_DISABLE_S = 5.0;
+
         public static final String CAMERA_1 = "limelight";
         /** Optional second camera. Leave "" to disable. */
         public static final String CAMERA_2 = "";
